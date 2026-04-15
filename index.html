@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CineNames</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="game-header">
+    <h1>CineNames</h1>
+    <p>The movie-actor challenge</p>
+  </header>
+
+  <!-- NAME PROMPT -->
+  <section id="name-prompt" class="screen">
+    <div class="name-prompt-card">
+      <h2>What's your name?</h2>
+      <input type="text" id="player-name-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
+      <button id="save-name-btn" class="btn btn-primary">Let's Go</button>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="lobby" class="screen">
+    <div class="player-bar">
+      <span>Playing as: <strong id="player-display-name"></strong></span>
+      <button id="change-name-btn" class="btn-link">change</button>
+      <span id="best-solo-display" class="best-solo"></span>
+    </div>
+    <div class="lobby-options">
+      <div class="lobby-card">
+        <h2>Solo Game</h2>
+        <p style="color:#888; margin-bottom:20px;">Test yourself against the board</p>
+        <button id="solo-btn" class="btn btn-primary" style="width:100%;">Play Solo</button>
+      </div>
+      <div class="lobby-card">
+        <h2>Create Game</h2>
+        <p style="color:#888; margin-bottom:20px;">Set up a board and invite a friend</p>
+        <button id="create-room-btn" class="btn btn-primary" style="width:100%;">Create Room</button>
+      </div>
+      <div class="lobby-card">
+        <h2>Join Game</h2>
+        <p style="color:#888; margin-bottom:20px;">Enter a room code to join</p>
+        <input type="text" id="join-code-input" maxlength="5" placeholder="ABCDE" autocomplete="off">
+        <button id="join-room-btn" class="btn btn-secondary" style="width:100%;">Join Room</button>
+      </div>
+    </div>
+    <div class="lobby-stats-buttons">
+      <button id="solo-scores-btn" class="btn btn-secondary">Best Solo Scores</button>
+      <button id="vs-stats-btn" class="btn btn-secondary">VS Stats</button>
+    </div>
+  </section>
+
+  <!-- SOLO LEADERBOARD -->
+  <section id="solo-leaderboard" class="screen">
+    <h2>Best Solo Scores</h2>
+    <div id="solo-leaderboard-list" class="leaderboard-list"></div>
+    <div style="text-align:center; margin-top:20px;">
+      <button id="solo-lb-back-btn" class="btn btn-secondary">Back</button>
+    </div>
+  </section>
+
+  <!-- VS STATS -->
+  <section id="vs-stats" class="screen">
+    <h2>VS Stats</h2>
+    <div id="vs-opponents-list" class="opponents-list"></div>
+    <div id="vs-detail-panel" class="vs-detail-panel" style="display:none;"></div>
+    <div style="text-align:center; margin-top:20px;">
+      <button id="vs-stats-back-btn" class="btn btn-secondary">Back</button>
+    </div>
+  </section>
+
+  <!-- BOARD SETUP -->
+  <section id="board-setup" class="screen">
+    <h2>Set Up the Board</h2>
+    <p style="color:#888; margin-bottom:20px;">Filter movies by genre and decade, then generate a 5x5 board.</p>
+
+    <div class="filter-section">
+      <h3>Genres</h3>
+      <div id="genre-checkboxes" class="checkbox-grid"></div>
+    </div>
+
+    <div class="filter-section">
+      <h3>Decades</h3>
+      <div id="decade-checkboxes" class="checkbox-grid">
+        <label class="checkbox-item"><input type="checkbox" value="1960"> 1960s</label>
+        <label class="checkbox-item"><input type="checkbox" value="1970"> 1970s</label>
+        <label class="checkbox-item"><input type="checkbox" value="1980"> 1980s</label>
+        <label class="checkbox-item"><input type="checkbox" value="1990"> 1990s</label>
+        <label class="checkbox-item"><input type="checkbox" value="2000"> 2000s</label>
+        <label class="checkbox-item"><input type="checkbox" value="2010"> 2010s</label>
+        <label class="checkbox-item"><input type="checkbox" value="2020"> 2020s</label>
+      </div>
+    </div>
+
+    <div class="filter-section">
+      <h3>Language</h3>
+      <div id="language-checkboxes" class="checkbox-grid"></div>
+    </div>
+
+    <div class="board-actions">
+      <button id="generate-board-btn" class="btn btn-primary">Generate Board</button>
+      <button id="confirm-board-btn" class="btn btn-secondary" style="display:none;">Create VS Room</button>
+      <button id="confirm-solo-btn" class="btn btn-secondary" style="display:none;">Play Solo</button>
+    </div>
+
+    <div id="board-preview" class="movie-grid"></div>
+  </section>
+
+  <!-- WAITING ROOM -->
+  <section id="waiting-room" class="screen">
+    <h2>Room Created!</h2>
+    <p style="color:#888;">Share this code with your opponent:</p>
+    <div id="room-code-display" class="room-code-big"></div>
+    <p class="waiting-text">Waiting for opponent to join...</p>
+    <div id="waiting-board" class="movie-grid" style="margin-top:30px;"></div>
+  </section>
+
+  <!-- SUBMISSION -->
+  <section id="submission" class="screen">
+    <div class="submission-sticky-timer">
+      <div id="submission-timer" class="timer"></div>
+      <p id="submission-role"></p>
+    </div>
+    <div class="submission-layout">
+      <div>
+        <div id="submission-board" class="movie-grid"></div>
+      </div>
+      <div class="actor-panel">
+        <h2>Your Answers</h2>
+        <div id="actor-fields"></div>
+        <button id="submit-actors-btn" class="btn btn-primary" style="width:100%; margin-top:15px;">Submit</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SUBMISSION WAITING -->
+  <section id="submission-waiting" class="screen">
+    <h2>Submitted!</h2>
+    <p id="waiting-message" class="waiting-text">Waiting for opponent to submit...</p>
+  </section>
+
+  <!-- VALIDATION -->
+  <section id="validation-screen" class="screen">
+    <h2>Checking Results</h2>
+    <p class="validation-spinner">Validating actors against movies...</p>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="screen">
+    <div id="result-banner" class="result-banner"></div>
+    <p id="result-bid-info"></p>
+    <div id="vs-score-panel" class="vs-score-panel" style="display:none;">
+      <div id="vs-today" class="vs-line"></div>
+      <div id="vs-alltime" class="vs-line alltime"></div>
+    </div>
+    <div id="results-board" class="movie-grid"></div>
+    <div class="result-stats">
+      <div id="my-stats"></div>
+      <div id="opp-stats"></div>
+    </div>
+    <div class="result-actions">
+      <button id="play-again-btn" class="btn btn-primary" style="margin-top:20px;">Play Again</button>
+    </div>
+  </section>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
+  <!-- Game scripts -->
+  <script src="js/firebase.js"></script>
+  <script src="js/tmdb.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
