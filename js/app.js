@@ -152,6 +152,15 @@ function bindEvents() {
     submitActors(selectedActors);
   });
 
+  // Mobile submit button
+  document.getElementById('mobile-submit-btn').addEventListener('click', () => {
+    if (submissionTimer) {
+      clearInterval(submissionTimer);
+      submissionTimer = null;
+    }
+    submitActors(selectedActors);
+  });
+
   // Play again
   document.getElementById('play-again-btn').addEventListener('click', () => {
     resetGameState();
@@ -179,6 +188,7 @@ function resetGameState() {
   forceFinishing = false;
   readyBound = false;
   opponentJoinedBeeped = false;
+  vsMatchRecorded = false;
   if (submissionTimer) {
     clearInterval(submissionTimer);
     submissionTimer = null;

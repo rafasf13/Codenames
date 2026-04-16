@@ -912,6 +912,11 @@ h1, h2, h3 {
   }
 }
 
+/* Mobile input bar - hidden by default */
+.mobile-input-bar {
+  display: none;
+}
+
 @media (max-width: 600px) {
   .movie-grid {
     grid-template-columns: repeat(3, 1fr);
@@ -930,5 +935,62 @@ h1, h2, h3 {
   .submission-sticky-timer {
     flex-direction: column;
     gap: 4px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 6px 10px;
+    background: #1a1a2e;
+    border-bottom: 1px solid #2a2a5a;
+  }
+
+  /* Hide the desktop actor panel on mobile */
+  #submission .actor-panel {
+    display: none;
+  }
+
+  /* Adjust submission layout for single column + fixed bars */
+  #submission .submission-layout {
+    grid-template-columns: 1fr;
+    padding-top: 60px;
+    padding-bottom: 120px;
+  }
+
+  /* Show the mobile fixed bottom bar */
+  .mobile-input-bar {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: #16213e;
+    border-top: 1px solid #2a2a5a;
+    padding: 10px 12px;
+  }
+
+  .mobile-input-bar .actor-field {
+    margin-bottom: 8px;
+  }
+
+  .mobile-input-bar .actor-dropdown {
+    bottom: 100%;
+    top: auto;
+    border-radius: 8px 8px 0 0;
+    max-height: 200px;
+  }
+
+  .mobile-submit-btn {
+    width: 100%;
+    padding: 10px;
+    font-size: 0.9rem;
+  }
+
+  .mobile-input-counter {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 4px;
   }
 }

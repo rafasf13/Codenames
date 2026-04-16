@@ -170,10 +170,8 @@ async function runValidation(data) {
     winner: winner
   };
 
-  await writeResults(currentRoom, results);
-  await setState(currentRoom, STATES.RESULTS);
-
-  // Record scores locally
+  // Record scores locally BEFORE setting state to RESULTS,
+  // because the Firebase listener will immediately render results
   if (data.daily || isDailyGame) {
     updateBestSoloScore(p1Score, p1Covered.size, p1ActorCount);
     await submitDailyScore(p1Score, p1Covered.size, p1ActorCount);
@@ -190,6 +188,9 @@ async function runValidation(data) {
     const oppCoveredCount = mySlot === 'player1' ? p2Covered.size : p1Covered.size;
     recordVsMatch(myPid, oppPid, myScore, oppScore, myCovered, oppCoveredCount, oppName);
   }
+
+  await writeResults(currentRoom, results);
+  await setState(currentRoom, STATES.RESULTS);
 }
 
 // Score = moviesCovered * (26 - actorsUsed)
@@ -318,8 +319,10 @@ async function startDailyPuzzle() {
     daily = await readDaily(dateStr);
   }
 
-  // Create a local room-like structure for the submission screen
-  const code = 'DAILY-' + dateStr;
+  // Each player gets their own room for the daily puzzle
+  // The board is shared via daily/{date}/board, but gameplay is isolated
+  const playerId = getPlayerId();
+  const code = 'DAILY-' + dateStr + '-' + playerId.slice(0, 8);
   const data = {
     state: STATES.SUBMISSION,
     solo: true,
@@ -328,7 +331,7 @@ async function startDailyPuzzle() {
     players: {
       player1: {
         uid: getUid(),
-        playerId: getPlayerId(),
+        playerId: playerId,
         name: getPlayerName(),
         joined: true,
         connected: true

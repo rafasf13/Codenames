@@ -6,6 +6,7 @@ const SUBMISSION_TIME = 300; // 5 minutes
 const MAX_ACTORS = 25;
 let activeDropdown = null; // track which dropdown is active for keyboard nav
 let highlightedIndex = -1;
+let vsMatchRecorded = false;
 
 function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -281,16 +282,55 @@ function renderSubmission(data, mySlot) {
   }
 }
 
+function isMobileLayout() {
+  return window.innerWidth <= 600;
+}
+
 function scrollToNextEmpty() {
   const idx = selectedActors.findIndex(a => a === null);
-  if (idx >= 0) {
-    const fields = document.querySelectorAll('.actor-field');
-    if (fields[idx]) {
-      const input = fields[idx].querySelector('.actor-input');
-      if (input && input.style.display !== 'none') {
-        input.focus();
+  if (isMobileLayout()) {
+    updateMobileInputBar(idx);
+  } else {
+    if (idx >= 0) {
+      const fields = document.querySelectorAll('#actor-fields .actor-field');
+      if (fields[idx]) {
+        const input = fields[idx].querySelector('.actor-input');
+        if (input && input.style.display !== 'none') {
+          input.focus();
+        }
       }
     }
+  }
+}
+
+function updateMobileInputBar(nextIdx) {
+  const slot = document.getElementById('mobile-input-slot');
+  if (!slot) return;
+
+  const filledCount = selectedActors.filter(a => a !== null).length;
+
+  if (nextIdx < 0) {
+    // All fields filled
+    slot.innerHTML = `<p class="mobile-input-counter">${filledCount}/25 actors entered</p>`;
+    return;
+  }
+
+  // Move the actor field into the mobile slot
+  const fields = document.querySelectorAll('#actor-fields .actor-field');
+  if (!fields[nextIdx]) return;
+
+  slot.innerHTML = '';
+  const counter = document.createElement('div');
+  counter.className = 'mobile-input-counter';
+  counter.textContent = `Actor ${nextIdx + 1}/25 (${filledCount} entered)`;
+  slot.appendChild(counter);
+
+  // Move the field to mobile bar
+  slot.appendChild(fields[nextIdx]);
+
+  const input = fields[nextIdx].querySelector('.actor-input');
+  if (input && input.style.display !== 'none') {
+    input.focus();
   }
 }
 
@@ -306,13 +346,44 @@ function selectPerson(person, index, input, selectedDisplay, dropdown) {
     input.style.display = 'block';
     input.value = '';
     selectedDisplay.style.display = 'none';
-    input.focus();
+    if (isMobileLayout()) {
+      // Return field to desktop container then refresh mobile bar
+      returnFieldToDesktop(index);
+    }
+    scrollToNextEmpty();
   });
   dropdown.style.display = 'none';
   activeDropdown = null;
   highlightedIndex = -1;
+
+  if (isMobileLayout()) {
+    // Return filled field to desktop container
+    returnFieldToDesktop(index);
+  }
   // Auto-focus next empty field
   setTimeout(scrollToNextEmpty, 50);
+}
+
+function returnFieldToDesktop(index) {
+  const container = document.getElementById('actor-fields');
+  const slot = document.getElementById('mobile-input-slot');
+  if (!slot || !container) return;
+  // Find the field in the mobile slot
+  const field = slot.querySelector(`.actor-field`);
+  if (field && parseInt(field.querySelector('.actor-input')?.dataset?.index) === index) {
+    // Insert back in order
+    const allFields = container.querySelectorAll('.actor-field');
+    let inserted = false;
+    for (const f of allFields) {
+      const fIdx = parseInt(f.querySelector('.actor-input')?.dataset?.index);
+      if (fIdx > index) {
+        container.insertBefore(field, f);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) container.appendChild(field);
+  }
 }
 
 function createActorField(index) {
@@ -476,6 +547,17 @@ function renderResults(data, mySlot) {
     const oppPid = data.players[oppSlot] ? data.players[oppSlot].playerId : null;
     const myName = getPlayerName();
     const oppName = data.players[oppSlot] ? data.players[oppSlot].name : 'Opponent';
+
+    // Player 2 also needs to record the match (player 1 records in runValidation)
+    if (mySlot === 'player2' && oppPid && !vsMatchRecorded) {
+      vsMatchRecorded = true;
+      const p2Score = r.p2Score;
+      const p1Score = r.p1Score;
+      const myCov = r.p2CoveredCount;
+      const oppCov = r.p1CoveredCount;
+      recordVsMatch(myPid, oppPid, p2Score, p1Score, myCov, oppCov, oppName);
+    }
+
     if (vsPanel && oppPid) {
       vsPanel.style.display = 'block';
       const totals = getVsTotals(myPid, oppPid);
