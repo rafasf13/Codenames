@@ -1,12 +1,12 @@
 const firebaseConfig = {
-  apiKey: "AIzaSyDzmkyfmFDfHVPu8QoXikuVgqnfEuGIL74",
+  apiKey: "AIzaSyCJGHainBPSqLEqIIXLSkxwLtZ1GTLESRQ",
   authDomain: "codemovies-15b34.firebaseapp.com",
   databaseURL: "https://codemovies-15b34-default-rtdb.firebaseio.com",
   projectId: "codemovies-15b34",
   storageBucket: "codemovies-15b34.firebasestorage.app",
   messagingSenderId: "77582229370",
-  appId: "1:77582229370:web:b38f4a54a327e0be5180c3",
-  measurementId: "G-6R6B6B2ZRZ"
+  appId: "1:77582229370:web:a224fa6bd08b79545180c3",
+  measurementId: "G-RHK1HXEMN3"
 };
 
 let app, db, auth, currentUser = null;
@@ -67,6 +67,27 @@ function writeResults(roomCode, results) {
 
 function setState(roomCode, state) {
   return roomRef(roomCode).child('state').set(state);
+}
+
+// --- Daily Puzzle ---
+function dailyRef(dateStr) {
+  return db.ref('daily/' + dateStr);
+}
+
+function writeDailyBoard(dateStr, moviesData) {
+  return dailyRef(dateStr).child('board').set({ movies: moviesData });
+}
+
+function readDaily(dateStr) {
+  return dailyRef(dateStr).once('value').then(snap => snap.val());
+}
+
+function writeDailyScore(dateStr, playerId, scoreData) {
+  return dailyRef(dateStr).child('scores/' + playerId).set(scoreData);
+}
+
+function readDailyScores(dateStr) {
+  return dailyRef(dateStr).child('scores').once('value').then(snap => snap.val());
 }
 
 function onDisconnectCleanup(roomCode, playerSlot) {

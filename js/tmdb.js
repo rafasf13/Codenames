@@ -1,4 +1,4 @@
-const TMDB_API_KEY = '9f2c769b4bfb1a200bd22db0d3b07ffb';
+const TMDB_API_KEY = '53710cdd3f74dfaf2157b3c2d8533090';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p/w185';
 
@@ -40,24 +40,44 @@ async function discoverMovies(genreIds, decades, languages) {
     if (range) {
       dateParam = `&primary_release_date.gte=${range.gte}&primary_release_date.lte=${range.lte}`;
     }
-    const pagesNeeded = Math.ceil(5 / dateRanges.length) || 1;
-    for (let page = 1; page <= pagesNeeded; page++) {
-      const url = `${TMDB_BASE}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=popularity.desc&vote_count.gte=100${genreParam}${dateParam}${langParam}&page=${page}`;
+
+    // First, find out how many pages are available
+    const probeUrl = `${TMDB_BASE}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=popularity.desc&vote_count.gte=50${genreParam}${dateParam}${langParam}&page=1`;
+    const probeRes = await fetch(probeUrl);
+    const probeData = await probeRes.json();
+    const totalPages = Math.min(probeData.total_pages || 1, 500);
+
+    // Add results from page 1
+    if (probeData.results) {
+      probeData.results.forEach(m => {
+        if (!seenIds.has(m.id)) { seenIds.add(m.id); allMovies.push(m); }
+      });
+    }
+
+    // Pick random pages from the available range to get variety
+    const pagesPerRange = Math.ceil(8 / dateRanges.length) || 2;
+    const randomPages = [];
+    for (let i = 0; i < pagesPerRange && totalPages > 1; i++) {
+      const p = Math.floor(Math.random() * Math.min(totalPages, 50)) + 1;
+      if (p !== 1 && !randomPages.includes(p)) randomPages.push(p);
+    }
+
+    for (const page of randomPages) {
+      const url = `${TMDB_BASE}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=popularity.desc&vote_count.gte=50${genreParam}${dateParam}${langParam}&page=${page}`;
       const res = await fetch(url);
       const data = await res.json();
       if (data.results) {
         data.results.forEach(m => {
-          if (!seenIds.has(m.id)) {
-            seenIds.add(m.id);
-            allMovies.push(m);
-          }
+          if (!seenIds.has(m.id)) { seenIds.add(m.id); allMovies.push(m); }
         });
       }
-      if (page >= data.total_pages) break;
     }
   }
 
-  const shuffled = allMovies.sort(() => Math.random() - 0.5);
+  // Deduplicate similar titles (e.g., "Super Mario Bros. Movie" and "Super Mario Galaxy")
+  const deduped = deduplicateSimilarTitles(allMovies);
+
+  const shuffled = deduped.sort(() => Math.random() - 0.5);
   const picked = shuffled.slice(0, 25);
   return picked.map(m => ({
     id: m.id,
@@ -66,6 +86,27 @@ async function discoverMovies(genreIds, decades, languages) {
     releaseDate: m.release_date,
     overview: m.overview
   }));
+}
+
+function deduplicateSimilarTitles(movies) {
+  // Remove movies with very similar titles (keep only one per group)
+  const result = [];
+  const usedKeys = new Set();
+  for (const m of movies) {
+    // Normalize: lowercase, remove punctuation, articles, numbers
+    const key = m.title.toLowerCase()
+      .replace(/[^a-z\s]/g, '')
+      .replace(/\b(the|a|an)\b/g, '')
+      .trim()
+      .replace(/\s+/g, ' ');
+    // Use first 3 significant words as a fuzzy key
+    const words = key.split(' ').filter(w => w.length > 2);
+    const shortKey = words.slice(0, 3).join(' ');
+    if (shortKey && usedKeys.has(shortKey)) continue;
+    if (shortKey) usedKeys.add(shortKey);
+    result.push(m);
+  }
+  return result;
 }
 
 let searchAbort = null;

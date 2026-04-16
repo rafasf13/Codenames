@@ -12,7 +12,9 @@ async function init() {
   bindEvents();
   // Check if player has a name already
   if (getPlayerName()) {
-    renderLobby();
+    // Try to rejoin an active game first
+    const rejoined = await tryRejoinGame();
+    if (!rejoined) renderLobby();
   } else {
     renderNamePrompt(() => renderLobby());
   }
@@ -21,15 +23,35 @@ async function init() {
 function bindEvents() {
   // Name change
   document.getElementById('change-name-btn').addEventListener('click', () => {
-    const input = document.getElementById('player-name-input');
-    input.value = getPlayerName() || '';
-    renderNamePrompt(() => renderLobby());
+    renderNamePrompt(() => renderLobby(), true);
   });
 
   // Lobby — solo
   document.getElementById('solo-btn').addEventListener('click', () => {
     pendingMode = 'solo';
     renderBoardSetup();
+  });
+
+  // Lobby — daily puzzle
+  document.getElementById('daily-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('daily-btn');
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    try {
+      const result = await startDailyPuzzle();
+      if (result.alreadyPlayed) {
+        const msg = document.getElementById('daily-already-played');
+        msg.textContent = "You've already played today's puzzle! Check the leaderboard.";
+        msg.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = "Play Today's Puzzle";
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to load daily puzzle: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = "Play Today's Puzzle";
+    }
   });
 
   // Lobby — create VS
@@ -116,8 +138,10 @@ function bindEvents() {
   // Leaderboard / Stats
   document.getElementById('solo-scores-btn').addEventListener('click', () => renderSoloLeaderboard());
   document.getElementById('vs-stats-btn').addEventListener('click', () => renderVsStats());
+  document.getElementById('daily-lb-btn').addEventListener('click', () => renderDailyLeaderboard());
   document.getElementById('solo-lb-back-btn').addEventListener('click', () => renderLobby());
   document.getElementById('vs-stats-back-btn').addEventListener('click', () => renderLobby());
+  document.getElementById('daily-lb-back-btn').addEventListener('click', () => renderLobby());
 
   // Submission
   document.getElementById('submit-actors-btn').addEventListener('click', () => {
@@ -142,13 +166,19 @@ function bindEvents() {
 
 function resetGameState() {
   if (currentRoom) stopListening(currentRoom);
+  clearActiveGame();
   currentRoom = null;
   mySlot = null;
   roomData = null;
   generatedMovies = null;
   isSoloGame = false;
+  isDailyGame = false;
+  dailyDate = null;
   selectedActors = [];
   pendingMode = null;
+  forceFinishing = false;
+  readyBound = false;
+  opponentJoinedBeeped = false;
   if (submissionTimer) {
     clearInterval(submissionTimer);
     submissionTimer = null;

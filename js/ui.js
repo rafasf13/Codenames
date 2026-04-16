@@ -19,6 +19,9 @@ function renderGame(data, mySlot) {
     case STATES.WAITING:
       if (mySlot === 'player1') renderWaiting(data);
       break;
+    case STATES.READY:
+      renderReady(data, mySlot);
+      break;
     case STATES.SUBMISSION:
       renderSubmission(data, mySlot);
       break;
@@ -32,15 +35,16 @@ function renderGame(data, mySlot) {
 }
 
 // --- Name prompt ---
-function renderNamePrompt(callback) {
+function renderNamePrompt(callback, forceShow) {
   const existing = getPlayerName();
-  if (existing) {
+  if (existing && !forceShow) {
     callback();
     return;
   }
   showScreen('name-prompt');
   const btn = document.getElementById('save-name-btn');
   const input = document.getElementById('player-name-input');
+  input.value = existing || '';
   const newBtn = btn.cloneNode(true);
   btn.parentNode.replaceChild(newBtn, btn);
   newBtn.addEventListener('click', () => {
@@ -53,6 +57,7 @@ function renderNamePrompt(callback) {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') newBtn.click();
   });
+  input.focus();
 }
 
 // --- Lobby ---
@@ -67,6 +72,21 @@ function renderLobby() {
     bestEl.textContent = best.score > 0
       ? `Best solo: ${best.score} pts (${best.covered} movies, ${best.actors} actors)`
       : '';
+  }
+  // Update daily puzzle button state
+  const dailyMsg = document.getElementById('daily-already-played');
+  const dailyBtn = document.getElementById('daily-btn');
+  if (dailyMsg && dailyBtn) {
+    if (hasDailyBeenPlayed(getTodayStr())) {
+      dailyMsg.textContent = "You've already played today's puzzle!";
+      dailyMsg.style.display = 'block';
+      dailyBtn.disabled = true;
+      dailyBtn.textContent = 'Played Today';
+    } else {
+      dailyMsg.style.display = 'none';
+      dailyBtn.disabled = false;
+      dailyBtn.textContent = "Play Today's Puzzle";
+    }
   }
 }
 
@@ -97,17 +117,9 @@ async function renderBoardSetup() {
 
 function renderBoardPreview(movies) {
   const grid = document.getElementById('board-preview');
-  grid.innerHTML = '';
-  grid.style.display = 'grid';
-  movies.forEach(m => {
-    const card = document.createElement('div');
-    card.className = 'movie-card';
-    const img = m.posterPath
-      ? `<img src="${TMDB_IMG}${m.posterPath}" alt="${m.title}">`
-      : `<div class="no-poster"></div>`;
-    card.innerHTML = `${img}<span class="movie-title">${m.title}</span>`;
-    grid.appendChild(card);
-  });
+  grid.innerHTML = `<p style="text-align:center; color:#4cc9f0; font-size:1.1rem; padding:20px;">
+    ${movies.length} movies selected. Board is ready!</p>`;
+  grid.style.display = 'block';
   document.getElementById('confirm-board-btn').style.display = 'inline-block';
   document.getElementById('confirm-solo-btn').style.display = 'inline-block';
 }
@@ -116,19 +128,79 @@ function renderBoardPreview(movies) {
 function renderWaiting(data) {
   showScreen('waiting-room');
   document.getElementById('room-code-display').textContent = currentRoom;
+  // Movies are hidden until the game starts — no peeking!
   const grid = document.getElementById('waiting-board');
-  if (!grid) return;
-  grid.innerHTML = '';
-  const movies = Object.values(data.board.movies);
-  movies.forEach(m => {
-    const card = document.createElement('div');
-    card.className = 'movie-card';
-    const img = m.posterPath
-      ? `<img src="${TMDB_IMG}${m.posterPath}" alt="${m.title}">`
-      : `<div class="no-poster"></div>`;
-    card.innerHTML = `${img}<span class="movie-title">${m.title}</span>`;
-    grid.appendChild(card);
-  });
+  if (grid) grid.innerHTML = '';
+}
+
+// --- Ready Up ---
+let readyBound = false;
+let opponentJoinedBeeped = false;
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    gain.gain.value = 0.15;
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) { /* audio not available */ }
+}
+
+function renderReady(data, mySlot) {
+  showScreen('ready-screen');
+
+  const otherSlot = mySlot === 'player1' ? 'player2' : 'player1';
+  const oppName = data.players[otherSlot] ? data.players[otherSlot].name : 'Opponent';
+  document.getElementById('ready-opponent-name').textContent = `Playing against: ${oppName}`;
+
+  // Beep once when opponent joins (for player 1 who was waiting)
+  if (mySlot === 'player1' && !opponentJoinedBeeped) {
+    opponentJoinedBeeped = true;
+    playBeep();
+  }
+
+  const myReady = data.ready && data.ready[mySlot];
+  const oppReady = data.ready && data.ready[otherSlot];
+
+  const btn = document.getElementById('ready-btn');
+  const status = document.getElementById('ready-status');
+
+  if (myReady && oppReady) {
+    status.textContent = 'Both ready! Starting...';
+    btn.style.display = 'none';
+    // Transition to submission
+    if (data.state === STATES.READY) {
+      setState(currentRoom, STATES.SUBMISSION);
+    }
+    return;
+  }
+
+  if (myReady) {
+    btn.style.display = 'none';
+    status.textContent = 'Waiting for opponent to ready up...';
+  } else if (oppReady) {
+    status.textContent = 'Opponent is ready!';
+    btn.style.display = 'inline-block';
+  } else {
+    status.textContent = 'Both players need to ready up.';
+    btn.style.display = 'inline-block';
+  }
+
+  if (!readyBound) {
+    readyBound = true;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Ready!';
+      await setReady();
+    });
+  }
 }
 
 // --- Submission ---
@@ -140,10 +212,18 @@ function renderSubmission(data, mySlot) {
       return;
     }
     showScreen('submission-waiting');
+    // Keep timer visible on waiting screen
+    updateWaitingTimerDisplay();
     const otherSlot = mySlot === 'player1' ? 'player2' : 'player1';
     const otherSubmitted = data.submissions && data.submissions[otherSlot] && data.submissions[otherSlot].submitted;
+    const otherConnected = data.players && data.players[otherSlot] && data.players[otherSlot].connected;
     if (otherSubmitted) {
       if (mySlot === 'player1' && data.state === STATES.SUBMISSION) runValidation(data);
+    } else if (!otherConnected) {
+      document.getElementById('waiting-message').textContent = 'Opponent disconnected. Finishing game...';
+      if (data.state === STATES.SUBMISSION) {
+        forceFinishGame(data);
+      }
     } else {
       document.getElementById('waiting-message').textContent = 'Waiting for opponent to submit...';
     }
@@ -175,7 +255,13 @@ function renderSubmission(data, mySlot) {
       if (submissionTimeLeft <= 0) {
         clearInterval(submissionTimer);
         submissionTimer = null;
-        submitActors(selectedActors);
+        // If we haven't submitted yet, submit now
+        if (!roomData || !roomData.submissions || !roomData.submissions[mySlot] || !roomData.submissions[mySlot].submitted) {
+          submitActors(selectedActors);
+        } else if (!isSoloGame && roomData) {
+          // We already submitted, timer expired — force finish
+          forceFinishGame(roomData);
+        }
       }
     }, 1000);
   }
@@ -335,6 +421,17 @@ function updateTimerDisplay() {
   el.textContent = `${m}:${s.toString().padStart(2, '0')}`;
   if (submissionTimeLeft <= 30) el.classList.add('urgent');
   else el.classList.remove('urgent');
+  updateWaitingTimerDisplay();
+}
+
+function updateWaitingTimerDisplay() {
+  const el = document.getElementById('waiting-timer');
+  if (!el) return;
+  const m = Math.floor(submissionTimeLeft / 60);
+  const s = submissionTimeLeft % 60;
+  el.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+  if (submissionTimeLeft <= 30) el.classList.add('urgent');
+  else el.classList.remove('urgent');
 }
 
 // --- Validation ---
@@ -349,6 +446,8 @@ function renderResults(data, mySlot) {
 
   const r = data.results;
   const movies = Object.values(data.board.movies);
+
+  clearActiveGame();
 
   const banner = document.getElementById('result-banner');
   const vsPanel = document.getElementById('vs-score-panel');
@@ -462,18 +561,27 @@ function renderResults(data, mySlot) {
       });
     }
 
-    const mentionedForMovie = new Set();
-    myActors.forEach(a => mentionedForMovie.add(a.id));
-    if (!r.solo) oppActors.forEach(a => mentionedForMovie.add(a.id));
+    const myActorIds = new Set(myActors.map(a => a.id));
+    const oppActorIds = new Set(oppActors.map(a => a.id));
+
+    function getMentionClass(personId) {
+      const byMe = myActorIds.has(personId) || myMentionedIds.has(personId);
+      const byOpp = !r.solo && (oppActorIds.has(personId) || oppMentionedIds.has(personId));
+      if (byMe && byOpp) return 'mentioned-both';
+      if (byMe) return 'mentioned-me';
+      if (byOpp) return 'mentioned-opp';
+      return 'not-mentioned';
+    }
 
     let castHtml = '<div class="cast-list">';
     topCast.forEach(c => {
-      const mentioned = mentionedForMovie.has(c.id);
+      const cls = getMentionClass(c.id);
       const roleLabel = c.role === 'director' ? ' (dir)' : '';
-      castHtml += `<span class="cast-name ${mentioned ? 'mentioned' : 'not-mentioned'}">${c.name}${roleLabel}</span>`;
+      castHtml += `<span class="cast-name ${cls}">${c.name}${roleLabel}</span>`;
     });
     extraMentioned.forEach(c => {
-      castHtml += `<span class="cast-name mentioned extra">${c.name}</span>`;
+      const cls = getMentionClass(c.id);
+      castHtml += `<span class="cast-name ${cls} extra">${c.name}</span>`;
     });
     castHtml += '</div>';
 
@@ -520,6 +628,36 @@ function renderSoloLeaderboard() {
   lb.forEach((entry, i) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${i + 1}</td><td>${entry.name}</td><td><strong>${entry.score}</strong></td><td>${entry.covered}/25</td><td>${entry.actors}</td><td>${entry.date || ''}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  list.appendChild(table);
+}
+
+// --- Daily Leaderboard ---
+async function renderDailyLeaderboard() {
+  showScreen('daily-leaderboard');
+  const dateStr = getTodayStr();
+  document.getElementById('daily-lb-title').textContent = `Daily Puzzle — ${dateStr}`;
+  const list = document.getElementById('daily-leaderboard-list');
+  list.innerHTML = '<p class="empty-message">Loading...</p>';
+
+  const scores = await readDailyScores(dateStr);
+  list.innerHTML = '';
+
+  if (!scores) {
+    list.innerHTML = '<p class="empty-message">No one has played today\'s puzzle yet.</p>';
+    return;
+  }
+
+  const entries = Object.values(scores).sort((a, b) => b.score - a.score);
+  const table = document.createElement('table');
+  table.className = 'leaderboard-table';
+  table.innerHTML = `<thead><tr><th>#</th><th>Player</th><th>Score</th><th>Movies</th><th>Actors</th></tr></thead>`;
+  const tbody = document.createElement('tbody');
+  entries.forEach((entry, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${i + 1}</td><td>${entry.name}</td><td><strong>${entry.score}</strong></td><td>${entry.covered}/25</td><td>${entry.actors}</td>`;
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);

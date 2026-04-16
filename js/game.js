@@ -3,6 +3,7 @@ const STATES = {
   LOBBY: 'LOBBY',
   BOARD_SETUP: 'BOARD_SETUP',
   WAITING: 'WAITING',
+  READY: 'READY',
   SUBMISSION: 'SUBMISSION',
   VALIDATION: 'VALIDATION',
   RESULTS: 'RESULTS'
@@ -48,6 +49,7 @@ async function createRoom(movies, solo) {
   await writeRoom(code, data);
   currentRoom = code;
   mySlot = 'player1';
+  saveActiveGame(code, 'player1', !!solo);
   startListening();
   return code;
 }
@@ -70,11 +72,12 @@ async function joinRoom(code) {
       joined: true,
       connected: true
     },
-    'state': STATES.SUBMISSION
+    'state': STATES.READY
   });
 
   currentRoom = code;
   mySlot = 'player2';
+  saveActiveGame(code, 'player2', false);
   startListening();
   return data;
 }
@@ -91,6 +94,16 @@ function startListening() {
 
 function handleStateChange(data) {
   renderGame(data, mySlot);
+}
+
+async function setReady() {
+  await updateRoom(currentRoom, {
+    ['ready/' + mySlot]: true
+  });
+}
+
+function bothReady(data) {
+  return data.ready && data.ready.player1 && data.ready.player2;
 }
 
 async function submitActors(actors) {
@@ -124,7 +137,7 @@ async function runValidation(data) {
   const p1Results = await validateActors(p1Actors, boardMovieIds);
   const p1Covered = new Set();
   p1Results.forEach(r => r.coveredMovies.forEach(id => p1Covered.add(id)));
-  const p1ActorCount = p1Results.filter(r => r.actor && r.coveredMovies.length > 0).length;
+  const p1ActorCount = p1Results.filter(r => r.actor).length;
   const p1Score = calculateScore(p1Covered.size, p1ActorCount);
 
   let p2Results = [], p2Covered = new Set(), p2ActorCount = 0, p2Score = 0;
@@ -133,7 +146,7 @@ async function runValidation(data) {
     const p2Actors = data.submissions.player2.actors || [];
     p2Results = await validateActors(p2Actors, boardMovieIds);
     p2Results.forEach(r => r.coveredMovies.forEach(id => p2Covered.add(id)));
-    p2ActorCount = p2Results.filter(r => r.actor && r.coveredMovies.length > 0).length;
+    p2ActorCount = p2Results.filter(r => r.actor).length;
     p2Score = calculateScore(p2Covered.size, p2ActorCount);
   }
 
@@ -161,7 +174,10 @@ async function runValidation(data) {
   await setState(currentRoom, STATES.RESULTS);
 
   // Record scores locally
-  if (data.solo) {
+  if (data.daily || isDailyGame) {
+    updateBestSoloScore(p1Score, p1Covered.size, p1ActorCount);
+    await submitDailyScore(p1Score, p1Covered.size, p1ActorCount);
+  } else if (data.solo) {
     updateBestSoloScore(p1Score, p1Covered.size, p1ActorCount);
   } else {
     const myPid = getPlayerId();
@@ -180,6 +196,230 @@ async function runValidation(data) {
 function calculateScore(moviesCovered, actorsUsed) {
   if (actorsUsed === 0) return 0;
   return moviesCovered * (26 - actorsUsed);
+}
+
+function saveActiveGame(roomCode, slot, solo) {
+  localStorage.setItem('cinenames_active_game', JSON.stringify({
+    roomCode, slot, solo, timestamp: Date.now()
+  }));
+}
+
+function clearActiveGame() {
+  localStorage.removeItem('cinenames_active_game');
+}
+
+function getActiveGame() {
+  const stored = localStorage.getItem('cinenames_active_game');
+  if (!stored) return null;
+  const data = JSON.parse(stored);
+  // Expire after 30 minutes
+  if (Date.now() - data.timestamp > 30 * 60 * 1000) {
+    clearActiveGame();
+    return null;
+  }
+  return data;
+}
+
+async function tryRejoinGame() {
+  const active = getActiveGame();
+  if (!active) return false;
+
+  const data = await readRoom(active.roomCode);
+  if (!data) {
+    clearActiveGame();
+    return false;
+  }
+
+  // Only rejoin if game is still in progress
+  if (data.state === STATES.RESULTS) {
+    clearActiveGame();
+    return false;
+  }
+
+  // Verify this player is in the room
+  const myPid = getPlayerId();
+  const slot = active.slot;
+  if (!data.players || !data.players[slot] || data.players[slot].playerId !== myPid) {
+    clearActiveGame();
+    return false;
+  }
+
+  currentRoom = active.roomCode;
+  mySlot = slot;
+  isSoloGame = !!active.solo;
+
+  // Mark as connected again
+  await updateRoom(active.roomCode, {
+    ['players/' + slot + '/connected']: true
+  });
+
+  startListening();
+  return true;
+}
+
+let isDailyGame = false;
+let dailyDate = null;
+
+function getTodayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function hasDailyBeenPlayed(dateStr) {
+  const stored = localStorage.getItem('cinenames_daily_played');
+  const played = stored ? JSON.parse(stored) : {};
+  return !!played[dateStr];
+}
+
+function markDailyPlayed(dateStr) {
+  const stored = localStorage.getItem('cinenames_daily_played');
+  const played = stored ? JSON.parse(stored) : {};
+  played[dateStr] = true;
+  localStorage.setItem('cinenames_daily_played', JSON.stringify(played));
+}
+
+// Seeded random number generator for deterministic daily boards
+function seededRandom(seed) {
+  let s = 0;
+  for (let i = 0; i < seed.length; i++) {
+    s = ((s << 5) - s) + seed.charCodeAt(i);
+    s |= 0;
+  }
+  return function() {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
+
+async function startDailyPuzzle() {
+  const dateStr = getTodayStr();
+
+  if (hasDailyBeenPlayed(dateStr)) {
+    return { alreadyPlayed: true, dateStr };
+  }
+
+  dailyDate = dateStr;
+  isDailyGame = true;
+  isSoloGame = true;
+
+  // Check if today's board already exists in Firebase
+  let daily = await readDaily(dateStr);
+
+  if (!daily || !daily.board) {
+    // Generate a deterministic board from the date seed
+    const movies = await generateDailyBoard(dateStr);
+    if (movies.length < 25) {
+      throw new Error(`Only found ${movies.length} movies for daily puzzle.`);
+    }
+    const moviesData = {};
+    movies.forEach((m, i) => {
+      moviesData[i] = { id: m.id, title: m.title, posterPath: m.posterPath || null };
+    });
+    await writeDailyBoard(dateStr, moviesData);
+    daily = await readDaily(dateStr);
+  }
+
+  // Create a local room-like structure for the submission screen
+  const code = 'DAILY-' + dateStr;
+  const data = {
+    state: STATES.SUBMISSION,
+    solo: true,
+    daily: true,
+    board: daily.board,
+    players: {
+      player1: {
+        uid: getUid(),
+        playerId: getPlayerId(),
+        name: getPlayerName(),
+        joined: true,
+        connected: true
+      }
+    }
+  };
+
+  await writeRoom(code, data);
+  currentRoom = code;
+  mySlot = 'player1';
+  saveActiveGame(code, 'player1', true);
+  startListening();
+  return { alreadyPlayed: false, dateStr };
+}
+
+async function generateDailyBoard(dateStr) {
+  // Fetch popular movies and use seeded shuffle to pick 25
+  const rng = seededRandom('cinenames-daily-' + dateStr);
+  const allMovies = [];
+  const seenIds = new Set();
+
+  // Fetch several pages of popular movies (no filters for daily)
+  // Use seeded page selection for determinism
+  const pages = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  for (const page of pages) {
+    const url = `${TMDB_BASE}/discover/movie?api_key=${TMDB_API_KEY}&language=en-US&sort_by=popularity.desc&vote_count.gte=200&page=${page}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.results) {
+      data.results.forEach(m => {
+        if (!seenIds.has(m.id)) {
+          seenIds.add(m.id);
+          allMovies.push(m);
+        }
+      });
+    }
+  }
+
+  // Seeded shuffle
+  for (let i = allMovies.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [allMovies[i], allMovies[j]] = [allMovies[j], allMovies[i]];
+  }
+
+  // Deduplicate similar titles
+  const deduped = deduplicateSimilarTitles(allMovies);
+
+  return deduped.slice(0, 25).map(m => ({
+    id: m.id,
+    title: m.title,
+    posterPath: m.poster_path,
+    releaseDate: m.release_date,
+    overview: m.overview
+  }));
+}
+
+async function submitDailyScore(score, covered, actorCount) {
+  const dateStr = dailyDate || getTodayStr();
+  markDailyPlayed(dateStr);
+  await writeDailyScore(dateStr, getPlayerId(), {
+    name: getPlayerName(),
+    score: score,
+    covered: covered,
+    actors: actorCount,
+    submittedAt: firebase.database.ServerValue.TIMESTAMP
+  });
+}
+
+let forceFinishing = false;
+async function forceFinishGame(data) {
+  if (forceFinishing) return;
+  forceFinishing = true;
+  try {
+    // If opponent hasn't submitted, create an empty submission for them
+    const otherSlot = mySlot === 'player1' ? 'player2' : 'player1';
+    if (!data.submissions || !data.submissions[otherSlot] || !data.submissions[otherSlot].submitted) {
+      await writeSubmission(currentRoom, otherSlot, {
+        submitted: true,
+        actors: [],
+        submittedAt: firebase.database.ServerValue.TIMESTAMP,
+        timedOut: true
+      });
+    }
+    // Re-read room data and validate
+    const freshData = await readRoom(currentRoom);
+    if (freshData && freshData.state === STATES.SUBMISSION) {
+      runValidation(freshData);
+    }
+  } finally {
+    forceFinishing = false;
+  }
 }
 
 function getMovieList() {

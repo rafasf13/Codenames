@@ -679,8 +679,18 @@ h1, h2, h3 {
   display: block;
 }
 
-.cast-name.mentioned {
+.cast-name.mentioned-me {
   color: #4cc9f0;
+  font-weight: 700;
+}
+
+.cast-name.mentioned-opp {
+  color: #ff6b35;
+  font-weight: 700;
+}
+
+.cast-name.mentioned-both {
+  color: #a855f7;
   font-weight: 700;
 }
 
@@ -689,8 +699,7 @@ h1, h2, h3 {
   font-weight: 400;
 }
 
-.cast-name.mentioned.extra {
-  color: #4cc9f0;
+.cast-name.extra {
   font-style: italic;
 }
 

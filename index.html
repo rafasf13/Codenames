@@ -41,6 +41,12 @@
         <button id="create-room-btn" class="btn btn-primary" style="width:100%;">Create Room</button>
       </div>
       <div class="lobby-card">
+        <h2>Daily Puzzle</h2>
+        <p style="color:#888; margin-bottom:20px;">Same board for everyone, once per day</p>
+        <button id="daily-btn" class="btn btn-primary" style="width:100%;">Play Today's Puzzle</button>
+        <p id="daily-already-played" style="color:#e94560; display:none; margin-top:10px; font-size:0.85rem;"></p>
+      </div>
+      <div class="lobby-card">
         <h2>Join Game</h2>
         <p style="color:#888; margin-bottom:20px;">Enter a room code to join</p>
         <input type="text" id="join-code-input" maxlength="5" placeholder="ABCDE" autocomplete="off">
@@ -50,6 +56,7 @@
     <div class="lobby-stats-buttons">
       <button id="solo-scores-btn" class="btn btn-secondary">Best Solo Scores</button>
       <button id="vs-stats-btn" class="btn btn-secondary">VS Stats</button>
+      <button id="daily-lb-btn" class="btn btn-secondary">Daily Leaderboard</button>
     </div>
   </section>
 
@@ -59,6 +66,15 @@
     <div id="solo-leaderboard-list" class="leaderboard-list"></div>
     <div style="text-align:center; margin-top:20px;">
       <button id="solo-lb-back-btn" class="btn btn-secondary">Back</button>
+    </div>
+  </section>
+
+  <!-- DAILY LEADERBOARD -->
+  <section id="daily-leaderboard" class="screen">
+    <h2 id="daily-lb-title">Today's Daily Puzzle Scores</h2>
+    <div id="daily-leaderboard-list" class="leaderboard-list"></div>
+    <div style="text-align:center; margin-top:20px;">
+      <button id="daily-lb-back-btn" class="btn btn-secondary">Back</button>
     </div>
   </section>
 
@@ -118,6 +134,14 @@
     <div id="waiting-board" class="movie-grid" style="margin-top:30px;"></div>
   </section>
 
+  <!-- READY UP -->
+  <section id="ready-screen" class="screen">
+    <h2>Opponent Joined!</h2>
+    <p id="ready-opponent-name" style="color:#4cc9f0; font-size:1.2rem; margin-bottom:20px;"></p>
+    <p id="ready-status" class="waiting-text"></p>
+    <button id="ready-btn" class="btn btn-primary" style="margin-top:20px; font-size:1.2rem; padding:15px 40px;">I'm Ready!</button>
+  </section>
+
   <!-- SUBMISSION -->
   <section id="submission" class="screen">
     <div class="submission-sticky-timer">
@@ -139,6 +163,7 @@
   <!-- SUBMISSION WAITING -->
   <section id="submission-waiting" class="screen">
     <h2>Submitted!</h2>
+    <div id="waiting-timer" class="timer"></div>
     <p id="waiting-message" class="waiting-text">Waiting for opponent to submit...</p>
   </section>
 
