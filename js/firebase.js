@@ -90,6 +90,66 @@ function readDailyScores(dateStr) {
   return dailyRef(dateStr).child('scores').once('value').then(snap => snap.val());
 }
 
+// --- User Profile (cloud-synced stats) ---
+function userRef(uid) {
+  return db.ref('users/' + uid);
+}
+
+function writeUserProfile(uid, data) {
+  return userRef(uid).set(data);
+}
+
+function readUserProfile(uid) {
+  return userRef(uid).once('value').then(snap => snap.val());
+}
+
+function updateUserProfile(uid, updates) {
+  return userRef(uid).update(updates);
+}
+
+// --- Email Link Auth ---
+function sendSignInLink(email) {
+  const actionCodeSettings = {
+    url: window.location.origin + window.location.pathname,
+    handleCodeInApp: true
+  };
+  return auth.sendSignInLinkToEmail(email, actionCodeSettings).then(() => {
+    localStorage.setItem('cinenames_email_for_signin', email);
+  });
+}
+
+function isSignInLink(url) {
+  return auth.isSignInWithEmailLink(url);
+}
+
+async function completeSignInWithLink(email, url) {
+  const currentAnonymousUser = auth.currentUser;
+  const credential = firebase.auth.EmailAuthProvider.credentialWithLink(email, url);
+
+  if (currentAnonymousUser && currentAnonymousUser.isAnonymous) {
+    // Link email to existing anonymous account — preserves UID
+    const result = await currentAnonymousUser.linkWithCredential(credential);
+    currentUser = result.user;
+    return currentUser;
+  } else {
+    // Sign in directly
+    const result = await auth.signInWithEmailLink(email, url);
+    currentUser = result.user;
+    return currentUser;
+  }
+}
+
+function isEmailLinked() {
+  if (!currentUser) return false;
+  return currentUser.providerData.some(p => p.providerId === 'password');
+}
+
+function getLinkedEmail() {
+  if (!currentUser) return null;
+  const emailProvider = currentUser.providerData.find(p => p.providerId === 'password');
+  return emailProvider ? emailProvider.email : null;
+}
+
 function onDisconnectCleanup(roomCode, playerSlot) {
   roomRef(roomCode).child('players/' + playerSlot + '/connected').onDisconnect().set(false);
   roomRef(roomCode).child('players/' + playerSlot + '/connected').set(true);

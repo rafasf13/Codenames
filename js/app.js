@@ -10,6 +10,14 @@ async function init() {
     return;
   }
   bindEvents();
+
+  // Check if returning from an email sign-in link
+  try {
+    await checkEmailSignInLink();
+  } catch (e) {
+    console.error('Email link check failed:', e);
+  }
+
   // Check if player has a name already
   if (getPlayerName()) {
     // Try to rejoin an active game first
@@ -60,6 +68,12 @@ function bindEvents() {
     renderBoardSetup();
   });
 
+  // Lobby — create Battle
+  document.getElementById('create-battle-btn').addEventListener('click', () => {
+    pendingMode = 'battle';
+    renderBoardSetup();
+  });
+
   // Lobby — join
   document.getElementById('join-room-btn').addEventListener('click', async () => {
     const code = document.getElementById('join-code-input').value;
@@ -107,13 +121,14 @@ function bindEvents() {
     btn.textContent = 'Generate Board';
   });
 
-  // Board setup — confirm VS
+  // Board setup — confirm VS / Battle
   document.getElementById('confirm-board-btn').addEventListener('click', async () => {
     if (!generatedMovies) return;
     const btn = document.getElementById('confirm-board-btn');
     btn.disabled = true;
     try {
-      await createRoom(generatedMovies, false);
+      const isBattle = pendingMode === 'battle';
+      await createRoom(generatedMovies, false, isBattle);
     } catch (err) {
       console.error(err);
       alert('Failed to create room.');
@@ -143,21 +158,13 @@ function bindEvents() {
   document.getElementById('vs-stats-back-btn').addEventListener('click', () => renderLobby());
   document.getElementById('daily-lb-back-btn').addEventListener('click', () => renderLobby());
 
-  // Submission
+  // Submission — don't clear timer so it keeps ticking on the waiting screen
   document.getElementById('submit-actors-btn').addEventListener('click', () => {
-    if (submissionTimer) {
-      clearInterval(submissionTimer);
-      submissionTimer = null;
-    }
     submitActors(selectedActors);
   });
 
   // Mobile submit button
   document.getElementById('mobile-submit-btn').addEventListener('click', () => {
-    if (submissionTimer) {
-      clearInterval(submissionTimer);
-      submissionTimer = null;
-    }
     submitActors(selectedActors);
   });
 
@@ -181,6 +188,7 @@ function resetGameState() {
   roomData = null;
   generatedMovies = null;
   isSoloGame = false;
+  isBattleGame = false;
   isDailyGame = false;
   dailyDate = null;
   selectedActors = [];
@@ -199,6 +207,8 @@ function resetGameState() {
   document.getElementById('confirm-solo-btn').style.display = 'none';
   document.getElementById('submission-board').innerHTML = '';
   document.getElementById('actor-fields').innerHTML = '';
+  const battlePanel = document.getElementById('battle-opp-panel');
+  if (battlePanel) battlePanel.style.display = 'none';
 }
 
 document.addEventListener('DOMContentLoaded', init);

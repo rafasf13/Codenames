@@ -22,9 +22,12 @@ function generateRoomCode() {
   return code;
 }
 
-async function createRoom(movies, solo) {
+let isBattleGame = false;
+
+async function createRoom(movies, solo, battle) {
   const code = generateRoomCode();
   isSoloGame = !!solo;
+  isBattleGame = !!battle;
   const moviesData = {};
   movies.forEach((m, i) => {
     moviesData[i] = { id: m.id, title: m.title, posterPath: m.posterPath || null };
@@ -34,6 +37,7 @@ async function createRoom(movies, solo) {
     state: solo ? STATES.SUBMISSION : STATES.WAITING,
     createdAt: firebase.database.ServerValue.TIMESTAMP,
     solo: !!solo,
+    battle: !!battle,
     board: { movies: moviesData },
     players: {
       player1: {
@@ -63,6 +67,7 @@ async function joinRoom(code) {
   if (data.solo) throw new Error('This is a solo game');
 
   isSoloGame = false;
+  isBattleGame = !!data.battle;
 
   await updateRoom(code, {
     'players/player2': {
@@ -106,11 +111,31 @@ function bothReady(data) {
   return data.ready && data.ready.player1 && data.ready.player2;
 }
 
+async function writeLivePick(index, actor) {
+  if (!currentRoom || !mySlot) return;
+  const path = `livePicks/${mySlot}/${index}`;
+  if (actor) {
+    await updateRoom(currentRoom, { [path]: { id: actor.id, name: actor.name } });
+  } else {
+    await updateRoom(currentRoom, { [path]: null });
+  }
+}
+
+function getOpponentLivePicks(data) {
+  if (!data || !data.livePicks) return [];
+  const oppSlot = mySlot === 'player1' ? 'player2' : 'player1';
+  const picks = data.livePicks[oppSlot];
+  if (!picks) return [];
+  return Object.values(picks).filter(p => p && p.id);
+}
+
 async function submitActors(actors) {
   const validActors = actors.filter(a => a && a.id);
+  const timeTaken = SUBMISSION_TIME - submissionTimeLeft;
   await writeSubmission(currentRoom, mySlot, {
     submitted: true,
     actors: validActors.map(a => ({ id: a.id, name: a.name })),
+    timeTaken: timeTaken,
     submittedAt: firebase.database.ServerValue.TIMESTAMP
   });
 }
@@ -156,6 +181,9 @@ async function runValidation(data) {
     else if (p2Score > p1Score) winner = 'player2';
   }
 
+  const p1Time = (data.submissions.player1 && data.submissions.player1.timeTaken) || 0;
+  const p2Time = (!data.solo && data.submissions.player2 && data.submissions.player2.timeTaken) || 0;
+
   const results = {
     solo: !!data.solo,
     movieCasts: movieCasts,
@@ -167,16 +195,18 @@ async function runValidation(data) {
     p2ActorCount: p2ActorCount,
     p1Score: p1Score,
     p2Score: p2Score,
+    p1Time: p1Time,
+    p2Time: p2Time,
     winner: winner
   };
 
   // Record scores locally BEFORE setting state to RESULTS,
   // because the Firebase listener will immediately render results
   if (data.daily || isDailyGame) {
-    updateBestSoloScore(p1Score, p1Covered.size, p1ActorCount);
-    await submitDailyScore(p1Score, p1Covered.size, p1ActorCount);
+    updateBestSoloScore(p1Score, p1Covered.size, p1ActorCount, p1Time);
+    await submitDailyScore(p1Score, p1Covered.size, p1ActorCount, p1Time);
   } else if (data.solo) {
-    updateBestSoloScore(p1Score, p1Covered.size, p1ActorCount);
+    updateBestSoloScore(p1Score, p1Covered.size, p1ActorCount, p1Time);
   } else {
     const myPid = getPlayerId();
     const oppSlot = mySlot === 'player1' ? 'player2' : 'player1';
@@ -186,11 +216,18 @@ async function runValidation(data) {
     const oppScore = mySlot === 'player1' ? p2Score : p1Score;
     const myCovered = mySlot === 'player1' ? p1Covered.size : p2Covered.size;
     const oppCoveredCount = mySlot === 'player1' ? p2Covered.size : p1Covered.size;
-    recordVsMatch(myPid, oppPid, myScore, oppScore, myCovered, oppCoveredCount, oppName);
+    const myTime = mySlot === 'player1' ? p1Time : p2Time;
+    const oppTime = mySlot === 'player1' ? p2Time : p1Time;
+    recordVsMatch(myPid, oppPid, myScore, oppScore, myCovered, oppCoveredCount, oppName, myTime, oppTime);
   }
 
   await writeResults(currentRoom, results);
   await setState(currentRoom, STATES.RESULTS);
+
+  // Auto-sync if account is linked
+  if (isEmailLinked()) {
+    syncStatsToCloud().catch(e => console.error('Auto-sync failed:', e));
+  }
 }
 
 // Score = moviesCovered * (26 - actorsUsed)
@@ -248,6 +285,7 @@ async function tryRejoinGame() {
   currentRoom = active.roomCode;
   mySlot = slot;
   isSoloGame = !!active.solo;
+  isBattleGame = !!data.battle;
 
   // Mark as connected again
   await updateRoom(active.roomCode, {
@@ -262,7 +300,11 @@ let isDailyGame = false;
 let dailyDate = null;
 
 function getTodayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function hasDailyBeenPlayed(dateStr) {
@@ -388,7 +430,7 @@ async function generateDailyBoard(dateStr) {
   }));
 }
 
-async function submitDailyScore(score, covered, actorCount) {
+async function submitDailyScore(score, covered, actorCount, timeTaken) {
   const dateStr = dailyDate || getTodayStr();
   markDailyPlayed(dateStr);
   await writeDailyScore(dateStr, getPlayerId(), {
@@ -396,6 +438,7 @@ async function submitDailyScore(score, covered, actorCount) {
     score: score,
     covered: covered,
     actors: actorCount,
+    time: timeTaken || 0,
     submittedAt: firebase.database.ServerValue.TIMESTAMP
   });
 }

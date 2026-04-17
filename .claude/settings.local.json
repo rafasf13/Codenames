@@ -2,7 +2,12 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "mcp__Claude_Preview__preview_start"
+      "mcp__Claude_Preview__preview_start",
+      "Bash(node -c js/game.js)",
+      "Bash(node -c js/ui.js)",
+      "Bash(node -c js/app.js)",
+      "Bash(node -c js/player.js)",
+      "Bash(node -c js/tmdb.js)"
     ]
   }
 }

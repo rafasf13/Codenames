@@ -8,6 +8,13 @@ let activeDropdown = null; // track which dropdown is active for keyboard nav
 let highlightedIndex = -1;
 let vsMatchRecorded = false;
 
+function formatTime(seconds) {
+  if (!seconds) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
 function showScreen(screenId) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const target = document.getElementById(screenId);
@@ -74,6 +81,9 @@ function renderLobby() {
       ? `Best solo: ${best.score} pts (${best.covered} movies, ${best.actors} actors)`
       : '';
   }
+  // Render account linking status
+  renderAccountStatus();
+
   // Update daily puzzle button state
   const dailyMsg = document.getElementById('daily-already-played');
   const dailyBtn = document.getElementById('daily-btn');
@@ -121,8 +131,16 @@ function renderBoardPreview(movies) {
   grid.innerHTML = `<p style="text-align:center; color:#4cc9f0; font-size:1.1rem; padding:20px;">
     ${movies.length} movies selected. Board is ready!</p>`;
   grid.style.display = 'block';
-  document.getElementById('confirm-board-btn').style.display = 'inline-block';
-  document.getElementById('confirm-solo-btn').style.display = 'inline-block';
+  const confirmBtn = document.getElementById('confirm-board-btn');
+  const soloBtn = document.getElementById('confirm-solo-btn');
+  if (pendingMode === 'solo') {
+    soloBtn.style.display = 'inline-block';
+    confirmBtn.style.display = 'none';
+  } else {
+    confirmBtn.style.display = 'inline-block';
+    confirmBtn.textContent = pendingMode === 'battle' ? 'Create Battle Room' : 'Create VS Room';
+    soloBtn.style.display = 'none';
+  }
 }
 
 // --- Waiting ---
@@ -132,6 +150,9 @@ function renderWaiting(data) {
   // Movies are hidden until the game starts — no peeking!
   const grid = document.getElementById('waiting-board');
   if (grid) grid.innerHTML = '';
+  // Show mode label
+  const header = document.querySelector('#waiting-room h2');
+  if (header) header.textContent = data.battle ? 'Battle Room Created!' : 'Room Created!';
 }
 
 // --- Ready Up ---
@@ -233,8 +254,20 @@ function renderSubmission(data, mySlot) {
 
   showScreen('submission');
 
+  const modeLabel = isBattleGame ? ' [BATTLE MODE]' : '';
   document.getElementById('submission-role').textContent =
-    'Name up to 25 actors or directors to cover as many movies as possible. Fewer = more points!';
+    'Name up to 25 actors or directors to cover as many movies as possible. Fewer = more points!' + modeLabel;
+
+  // Show/hide battle opponent panel
+  const battlePanel = document.getElementById('battle-opp-panel');
+  if (battlePanel) {
+    if (isBattleGame) {
+      battlePanel.style.display = 'block';
+      updateBattleOpponentList(data);
+    } else {
+      battlePanel.style.display = 'none';
+    }
+  }
 
   const container = document.getElementById('actor-fields');
   if (container.children.length !== MAX_ACTORS) {
@@ -305,17 +338,45 @@ function scrollToNextEmpty() {
 
 function updateMobileInputBar(nextIdx) {
   const slot = document.getElementById('mobile-input-slot');
+  const enteredList = document.getElementById('mobile-entered-list');
   if (!slot) return;
+
+  // Update entered actors list
+  if (enteredList) {
+    enteredList.innerHTML = '';
+    selectedActors.forEach((a, i) => {
+      if (a) {
+        const tag = document.createElement('span');
+        tag.className = 'mobile-entered-tag';
+        tag.innerHTML = `${a.name}<button class="remove-tag" data-idx="${i}">&times;</button>`;
+        tag.querySelector('.remove-tag').addEventListener('click', () => {
+          selectedActors[i] = null;
+          if (!isSoloGame && !isDailyGame) {
+            writeLivePick(i, null);
+          }
+          // Reset the desktop field too
+          const fields = document.querySelectorAll('#actor-fields .actor-field');
+          if (fields[i]) {
+            const input = fields[i].querySelector('.actor-input');
+            const display = fields[i].querySelector('.actor-selected');
+            if (input) { input.style.display = 'block'; input.value = ''; }
+            if (display) display.style.display = 'none';
+          }
+          scrollToNextEmpty();
+        });
+        enteredList.appendChild(tag);
+      }
+    });
+  }
 
   const filledCount = selectedActors.filter(a => a !== null).length;
 
   if (nextIdx < 0) {
-    // All fields filled
-    slot.innerHTML = `<p class="mobile-input-counter">${filledCount}/25 actors entered</p>`;
+    slot.innerHTML = `<p class="mobile-input-counter">${filledCount}/25 actors entered — all slots filled</p>`;
     return;
   }
 
-  // Move the actor field into the mobile slot
+  // Put the next empty field in the mobile slot
   const fields = document.querySelectorAll('#actor-fields .actor-field');
   if (!fields[nextIdx]) return;
 
@@ -324,8 +385,6 @@ function updateMobileInputBar(nextIdx) {
   counter.className = 'mobile-input-counter';
   counter.textContent = `Actor ${nextIdx + 1}/25 (${filledCount} entered)`;
   slot.appendChild(counter);
-
-  // Move the field to mobile bar
   slot.appendChild(fields[nextIdx]);
 
   const input = fields[nextIdx].querySelector('.actor-input');
@@ -335,7 +394,19 @@ function updateMobileInputBar(nextIdx) {
 }
 
 function selectPerson(person, index, input, selectedDisplay, dropdown) {
+  // In Battle mode, check if opponent already picked this actor
+  if (isBattleGame && roomData) {
+    const oppPicks = getOpponentLivePicks(roomData);
+    if (oppPicks.some(p => p.id === person.id)) {
+      alert(`${person.name} was already picked by your opponent!`);
+      return;
+    }
+  }
   selectedActors[index] = { id: person.id, name: person.name };
+  // Write live pick to Firebase for VS/Battle modes
+  if (!isSoloGame && !isDailyGame) {
+    writeLivePick(index, person);
+  }
   input.value = '';
   input.style.display = 'none';
   const roleLabel = person.department === 'Directing' ? ' (dir)' : '';
@@ -343,13 +414,12 @@ function selectPerson(person, index, input, selectedDisplay, dropdown) {
   selectedDisplay.innerHTML = `<span>${person.name}${roleLabel}</span><button class="remove-actor" data-index="${index}">&times;</button>`;
   selectedDisplay.querySelector('.remove-actor').addEventListener('click', () => {
     selectedActors[index] = null;
+    if (!isSoloGame && !isDailyGame) {
+      writeLivePick(index, null);
+    }
     input.style.display = 'block';
     input.value = '';
     selectedDisplay.style.display = 'none';
-    if (isMobileLayout()) {
-      // Return field to desktop container then refresh mobile bar
-      returnFieldToDesktop(index);
-    }
     scrollToNextEmpty();
   });
   dropdown.style.display = 'none';
@@ -357,33 +427,26 @@ function selectPerson(person, index, input, selectedDisplay, dropdown) {
   highlightedIndex = -1;
 
   if (isMobileLayout()) {
-    // Return filled field to desktop container
-    returnFieldToDesktop(index);
+    // Return filled field to desktop container before showing next
+    const container = document.getElementById('actor-fields');
+    const slot = document.getElementById('mobile-input-slot');
+    const field = input.closest('.actor-field');
+    if (field && slot && container) {
+      const allFields = container.querySelectorAll('.actor-field');
+      let inserted = false;
+      for (const f of allFields) {
+        const fIdx = parseInt(f.querySelector('.actor-input')?.dataset?.index);
+        if (fIdx > index) {
+          container.insertBefore(field, f);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) container.appendChild(field);
+    }
   }
   // Auto-focus next empty field
   setTimeout(scrollToNextEmpty, 50);
-}
-
-function returnFieldToDesktop(index) {
-  const container = document.getElementById('actor-fields');
-  const slot = document.getElementById('mobile-input-slot');
-  if (!slot || !container) return;
-  // Find the field in the mobile slot
-  const field = slot.querySelector(`.actor-field`);
-  if (field && parseInt(field.querySelector('.actor-input')?.dataset?.index) === index) {
-    // Insert back in order
-    const allFields = container.querySelectorAll('.actor-field');
-    let inserted = false;
-    for (const f of allFields) {
-      const fIdx = parseInt(f.querySelector('.actor-input')?.dataset?.index);
-      if (fIdx > index) {
-        container.insertBefore(field, f);
-        inserted = true;
-        break;
-      }
-    }
-    if (!inserted) container.appendChild(field);
-  }
 }
 
 function createActorField(index) {
@@ -392,7 +455,7 @@ function createActorField(index) {
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.placeholder = `Actor/Director ${index + 1}`;
+  input.placeholder = `Search actor or director...`;
   input.className = 'actor-input';
   input.dataset.index = index;
 
@@ -466,22 +529,47 @@ function renderActorDropdown(dropdown, results, index, input, selectedDisplay) {
   }
   dropdown.style.display = 'block';
 
+  // In Battle mode, get opponent's picks to mark blocked actors
+  const oppPicks = isBattleGame && roomData ? getOpponentLivePicks(roomData) : [];
+  const blockedIds = new Set(oppPicks.map(p => p.id));
+
   results.forEach(person => {
+    const isBlocked = isBattleGame && blockedIds.has(person.id);
     const item = document.createElement('div');
-    item.className = 'dropdown-item';
+    item.className = 'dropdown-item' + (isBlocked ? ' blocked' : '');
     const img = person.profilePath
       ? `<img src="${TMDB_IMG}${person.profilePath}" class="actor-thumb">`
       : `<div class="actor-thumb no-photo"></div>`;
     const roleTag = person.department === 'Directing' ? '<span class="role-tag director">Director</span>' : '';
-    item.innerHTML = `${img}<div><strong>${person.name}</strong>${roleTag}</div>`;
+    const blockedTag = isBlocked ? '<span class="role-tag blocked-tag">Taken</span>' : '';
+    item.innerHTML = `${img}<div><strong>${person.name}</strong>${roleTag}${blockedTag}</div>`;
 
     item.addEventListener('mousedown', (e) => {
       e.preventDefault();
+      if (isBlocked) return;
+      selectPerson(person, index, input, selectedDisplay, dropdown);
+    });
+    item.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (isBlocked) return;
       selectPerson(person, index, input, selectedDisplay, dropdown);
     });
 
     dropdown.appendChild(item);
   });
+}
+
+function updateBattleOpponentList(data) {
+  const list = document.getElementById('battle-opp-list');
+  if (!list) return;
+  const oppPicks = getOpponentLivePicks(data);
+  if (oppPicks.length === 0) {
+    list.innerHTML = '<p style="color:#888; font-size:0.9rem;">No picks yet...</p>';
+  } else {
+    list.innerHTML = oppPicks.map(p =>
+      `<div class="battle-opp-pick">${p.name}</div>`
+    ).join('');
+  }
 }
 
 function updateTimerDisplay() {
@@ -528,7 +616,7 @@ function renderResults(data, mySlot) {
     banner.className = 'result-banner win';
     const best = getBestSoloScore();
     document.getElementById('result-bid-info').textContent =
-      `${r.p1CoveredCount}/25 movies covered with ${r.p1ActorCount} actors | Best: ${best.score} pts`;
+      `${r.p1CoveredCount}/25 movies covered with ${r.p1ActorCount} actors in ${formatTime(r.p1Time)} | Best: ${best.score} pts`;
     if (vsPanel) vsPanel.style.display = 'none';
   } else {
     const myScore = mySlot === 'player1' ? r.p1Score : r.p2Score;
@@ -555,7 +643,12 @@ function renderResults(data, mySlot) {
       const p1Score = r.p1Score;
       const myCov = r.p2CoveredCount;
       const oppCov = r.p1CoveredCount;
-      recordVsMatch(myPid, oppPid, p2Score, p1Score, myCov, oppCov, oppName);
+      const myTime = r.p2Time || 0;
+      const oppTime = r.p1Time || 0;
+      recordVsMatch(myPid, oppPid, p2Score, p1Score, myCov, oppCov, oppName, myTime, oppTime);
+      if (isEmailLinked()) {
+        syncStatsToCloud().catch(e => console.error('Auto-sync failed:', e));
+      }
     }
 
     if (vsPanel && oppPid) {
@@ -673,23 +766,23 @@ function renderResults(data, mySlot) {
 
   // Player stats
   const myStats = mySlot === 'player1'
-    ? { covered: r.p1CoveredCount, actors: r.p1ActorCount, score: r.p1Score }
-    : { covered: r.p2CoveredCount, actors: r.p2ActorCount, score: r.p2Score };
+    ? { covered: r.p1CoveredCount, actors: r.p1ActorCount, score: r.p1Score, time: r.p1Time }
+    : { covered: r.p2CoveredCount, actors: r.p2ActorCount, score: r.p2Score, time: r.p2Time };
 
   if (r.solo) {
     document.getElementById('my-stats').innerHTML =
-      `<h3>${getPlayerName()}</h3><p>${myStats.covered}/25 movies covered<br>${myStats.actors} actors used<br><strong>${myStats.score} points</strong></p>`;
+      `<h3>${getPlayerName()}</h3><p>${myStats.covered}/25 movies, ${myStats.actors} actors, ${formatTime(myStats.time)}<br><strong>${myStats.score} points</strong></p>`;
     document.getElementById('opp-stats').innerHTML = '';
   } else {
     const oppStats = mySlot === 'player1'
-      ? { covered: r.p2CoveredCount, actors: r.p2ActorCount, score: r.p2Score }
-      : { covered: r.p1CoveredCount, actors: r.p1ActorCount, score: r.p1Score };
+      ? { covered: r.p2CoveredCount, actors: r.p2ActorCount, score: r.p2Score, time: r.p2Time }
+      : { covered: r.p1CoveredCount, actors: r.p1ActorCount, score: r.p1Score, time: r.p1Time };
     const oppSlot = mySlot === 'player1' ? 'player2' : 'player1';
     const oppName = data.players[oppSlot] ? data.players[oppSlot].name : 'Opponent';
     document.getElementById('my-stats').innerHTML =
-      `<h3>${getPlayerName()}</h3><p>${myStats.covered}/25 movies covered<br>${myStats.actors} actors used<br><strong>${myStats.score} points</strong></p>`;
+      `<h3>${getPlayerName()}</h3><p>${myStats.covered}/25 movies, ${myStats.actors} actors, ${formatTime(myStats.time)}<br><strong>${myStats.score} points</strong></p>`;
     document.getElementById('opp-stats').innerHTML =
-      `<h3>${oppName}</h3><p>${oppStats.covered}/25 movies covered<br>${oppStats.actors} actors used<br><strong>${oppStats.score} points</strong></p>`;
+      `<h3>${oppName}</h3><p>${oppStats.covered}/25 movies, ${oppStats.actors} actors, ${formatTime(oppStats.time)}<br><strong>${oppStats.score} points</strong></p>`;
   }
 }
 
@@ -705,11 +798,13 @@ function renderSoloLeaderboard() {
   }
   const table = document.createElement('table');
   table.className = 'leaderboard-table';
-  table.innerHTML = `<thead><tr><th>#</th><th>Player</th><th>Score</th><th>Movies</th><th>Actors</th><th>Date</th></tr></thead>`;
+  table.innerHTML = `<thead><tr><th>#</th><th>Player</th><th>Score</th><th>Details</th><th>Date</th></tr></thead>`;
   const tbody = document.createElement('tbody');
   lb.forEach((entry, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i + 1}</td><td>${entry.name}</td><td><strong>${entry.score}</strong></td><td>${entry.covered}/25</td><td>${entry.actors}</td><td>${entry.date || ''}</td>`;
+    const timeStr = entry.time ? formatTime(entry.time) : '';
+    const details = `${entry.covered}/25, ${entry.actors} actors${timeStr ? ', ' + timeStr : ''}`;
+    tr.innerHTML = `<td>${i + 1}</td><td>${entry.name}</td><td><strong>${entry.score}</strong></td><td>${details}</td><td>${entry.date || ''}</td>`;
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -732,14 +827,16 @@ async function renderDailyLeaderboard() {
     return;
   }
 
-  const entries = Object.values(scores).sort((a, b) => b.score - a.score);
+  const entries = Object.values(scores).sort((a, b) => b.score - a.score || (a.time || 0) - (b.time || 0));
   const table = document.createElement('table');
   table.className = 'leaderboard-table';
-  table.innerHTML = `<thead><tr><th>#</th><th>Player</th><th>Score</th><th>Movies</th><th>Actors</th></tr></thead>`;
+  table.innerHTML = `<thead><tr><th>#</th><th>Player</th><th>Score</th><th>Details</th></tr></thead>`;
   const tbody = document.createElement('tbody');
   entries.forEach((entry, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i + 1}</td><td>${entry.name}</td><td><strong>${entry.score}</strong></td><td>${entry.covered}/25</td><td>${entry.actors}</td>`;
+    const timeStr = entry.time ? formatTime(entry.time) : '';
+    const details = `${entry.covered}/25, ${entry.actors} actors${timeStr ? ', ' + timeStr : ''}`;
+    tr.innerHTML = `<td>${i + 1}</td><td>${entry.name}</td><td><strong>${entry.score}</strong></td><td>${details}</td>`;
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -816,6 +913,140 @@ function renderVsDetail(oppId, oppName) {
   `;
 
   detailEl.scrollIntoView({ behavior: 'smooth' });
+}
+
+// --- Account linking ---
+function renderAccountStatus() {
+  const container = document.getElementById('account-status');
+  if (!container) return;
+  if (!currentUser) {
+    container.innerHTML = '';
+    return;
+  }
+
+  if (isEmailLinked()) {
+    const email = getLinkedEmail();
+    container.innerHTML = `<p class="account-linked">Account linked: <strong>${email}</strong>
+      <button id="sync-btn" class="btn-link" style="margin-left:8px;">Sync now</button></p>`;
+    container.querySelector('#sync-btn').addEventListener('click', async () => {
+      const btn = container.querySelector('#sync-btn');
+      btn.textContent = 'Syncing...';
+      try {
+        await syncStatsToCloud();
+        btn.textContent = 'Synced!';
+        setTimeout(() => btn.textContent = 'Sync now', 2000);
+      } catch (e) {
+        btn.textContent = 'Failed';
+        console.error(e);
+      }
+    });
+  } else {
+    container.innerHTML = `
+      <p style="color:#888; font-size:0.85rem; margin-bottom:8px;">Sync your stats across devices:</p>
+      <div class="link-email-form">
+        <input type="email" id="link-email-input" placeholder="your@email.com" autocomplete="email">
+        <button id="link-email-btn" class="btn btn-secondary">Link Email</button>
+        <button id="signin-email-btn" class="btn-link" style="font-size:0.8rem;">Already linked? Sign in</button>
+      </div>
+      <div id="account-msg"></div>`;
+
+    container.querySelector('#link-email-btn').addEventListener('click', handleLinkEmail);
+    container.querySelector('#signin-email-btn').addEventListener('click', handleSignInEmail);
+    container.querySelector('#link-email-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleLinkEmail();
+    });
+  }
+}
+
+async function handleLinkEmail() {
+  const input = document.getElementById('link-email-input');
+  const msgEl = document.getElementById('account-msg');
+  const email = input.value.trim();
+  if (!email || !email.includes('@')) {
+    msgEl.innerHTML = '<p class="account-error">Enter a valid email.</p>';
+    return;
+  }
+  const btn = document.getElementById('link-email-btn');
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  try {
+    await sendSignInLink(email);
+    msgEl.innerHTML = '<p class="account-message">Check your email! Click the link to connect your account.</p>';
+  } catch (e) {
+    console.error(e);
+    msgEl.innerHTML = `<p class="account-error">Failed: ${e.message}</p>`;
+    btn.disabled = false;
+    btn.textContent = 'Link Email';
+  }
+}
+
+async function handleSignInEmail() {
+  const input = document.getElementById('link-email-input');
+  const msgEl = document.getElementById('account-msg');
+  const email = input.value.trim();
+  if (!email || !email.includes('@')) {
+    msgEl.innerHTML = '<p class="account-error">Enter your email first, then click Sign in. We\'ll send you a link.</p>';
+    return;
+  }
+  const btn = document.getElementById('signin-email-btn');
+  btn.textContent = 'Sending...';
+  try {
+    await sendSignInLink(email);
+    msgEl.innerHTML = '<p class="account-message">Check your email! Click the link to sign in and load your stats.</p>';
+  } catch (e) {
+    console.error(e);
+    msgEl.innerHTML = `<p class="account-error">Failed: ${e.message}</p>`;
+    btn.textContent = 'Already linked? Sign in';
+  }
+}
+
+async function checkEmailSignInLink() {
+  if (!auth || !isSignInLink(window.location.href)) return false;
+
+  let email = localStorage.getItem('cinenames_email_for_signin');
+  if (!email) {
+    email = prompt('Enter the email you used to link your account:');
+    if (!email) return false;
+  }
+
+  try {
+    await completeSignInWithLink(email, window.location.href);
+    localStorage.removeItem('cinenames_email_for_signin');
+    // Clean up the URL
+    window.history.replaceState(null, '', window.location.pathname);
+
+    // Try to load stats from cloud
+    const loaded = await loadStatsFromCloud();
+    if (loaded) {
+      alert('Account linked! Your stats have been synced.');
+    } else {
+      // First time linking — upload current stats
+      await syncStatsToCloud();
+      alert('Account linked! Your stats are now saved to the cloud.');
+    }
+    return true;
+  } catch (e) {
+    console.error('Email sign-in failed:', e);
+    if (e.code === 'auth/email-already-in-use') {
+      // The email is linked to a different anonymous account
+      // Sign in directly instead of linking
+      try {
+        const result = await auth.signInWithEmailLink(email, window.location.href);
+        currentUser = result.user;
+        localStorage.removeItem('cinenames_email_for_signin');
+        window.history.replaceState(null, '', window.location.pathname);
+        await loadStatsFromCloud();
+        alert('Signed in! Your stats have been loaded.');
+        return true;
+      } catch (e2) {
+        console.error('Direct sign-in also failed:', e2);
+        alert('Sign-in failed: ' + e2.message);
+      }
+    } else {
+      alert('Sign-in failed: ' + e.message);
+    }
+    return false;
+  }
 }
 
 // Close dropdowns when clicking outside

@@ -52,22 +52,24 @@ function saveSoloLeaderboard(lb) {
   localStorage.setItem('cinenames_solo_leaderboard', JSON.stringify(lb));
 }
 
-function addSoloScore(playerName, score, covered, actors) {
+function addSoloScore(playerName, score, covered, actors, timeTaken) {
   const lb = getSoloLeaderboard();
   lb.push({
     name: playerName,
     score: score,
     covered: covered,
     actors: actors,
+    time: timeTaken || 0,
     date: new Date().toISOString().slice(0, 10),
     timestamp: Date.now()
   });
-  lb.sort((a, b) => b.score - a.score);
+  // Sort by score desc, then time asc as tiebreaker
+  lb.sort((a, b) => b.score - a.score || (a.time || 0) - (b.time || 0));
   saveSoloLeaderboard(lb.slice(0, 20));
 }
 
 // Keep legacy best score working for lobby display
-function updateBestSoloScore(score, covered, actors) {
+function updateBestSoloScore(score, covered, actors, timeTaken) {
   const player = getPlayer();
   if (!player) return;
   if (score > (player.bestSoloScore || 0)) {
@@ -76,7 +78,7 @@ function updateBestSoloScore(score, covered, actors) {
     player.bestSoloActors = actors;
     savePlayer(player);
   }
-  addSoloScore(player.name, score, covered, actors);
+  addSoloScore(player.name, score, covered, actors, timeTaken);
 }
 
 function getBestSoloScore() {
@@ -120,16 +122,84 @@ function getVsOpponents() {
   return stored ? JSON.parse(stored) : {};
 }
 
-function recordVsMatch(myId, oppId, myScore, oppScore, myCovered, oppCovered, oppName) {
+function recordVsMatch(myId, oppId, myScore, oppScore, myCovered, oppCovered, oppName, myTime, oppTime) {
   if (oppName) recordVsOpponent(oppId, oppName);
   const data = getVsScores(myId, oppId);
   data.matches.push({
     date: new Date().toISOString().slice(0, 10),
     timestamp: Date.now(),
     scores: { [myId]: myScore, [oppId]: oppScore },
-    covered: { [myId]: myCovered || 0, [oppId]: oppCovered || 0 }
+    covered: { [myId]: myCovered || 0, [oppId]: oppCovered || 0 },
+    times: { [myId]: myTime || 0, [oppId]: oppTime || 0 }
   });
   saveVsScores(myId, oppId, data);
+}
+
+// --- Cloud sync ---
+async function syncStatsToCloud() {
+  const uid = getUid();
+  if (!uid || !isEmailLinked()) return;
+  const player = getPlayer();
+  if (!player) return;
+
+  const data = {
+    name: player.name,
+    playerId: player.id,
+    bestSoloScore: player.bestSoloScore || 0,
+    bestSoloCovered: player.bestSoloCovered || 0,
+    bestSoloActors: player.bestSoloActors || 0,
+    soloLeaderboard: getSoloLeaderboard(),
+    vsOpponents: getVsOpponents(),
+    lastSync: firebase.database.ServerValue.TIMESTAMP
+  };
+
+  // Also sync VS match data for each opponent
+  const opponents = getVsOpponents();
+  const vsData = {};
+  Object.keys(opponents).forEach(oppId => {
+    const key = getVsKey(player.id, oppId);
+    const stored = localStorage.getItem(key);
+    if (stored) vsData[key] = JSON.parse(stored);
+  });
+  data.vsMatches = vsData;
+
+  await writeUserProfile(uid, data);
+}
+
+async function loadStatsFromCloud() {
+  const uid = getUid();
+  if (!uid) return false;
+
+  const data = await readUserProfile(uid);
+  if (!data || !data.playerId) return false;
+
+  // Restore player identity
+  const player = getPlayer() || {};
+  player.id = data.playerId;
+  player.name = data.name;
+  player.bestSoloScore = data.bestSoloScore || 0;
+  player.bestSoloCovered = data.bestSoloCovered || 0;
+  player.bestSoloActors = data.bestSoloActors || 0;
+  savePlayer(player);
+
+  // Restore solo leaderboard
+  if (data.soloLeaderboard) {
+    saveSoloLeaderboard(data.soloLeaderboard);
+  }
+
+  // Restore VS opponents
+  if (data.vsOpponents) {
+    localStorage.setItem('cinenames_vs_opponents', JSON.stringify(data.vsOpponents));
+  }
+
+  // Restore VS match data
+  if (data.vsMatches) {
+    Object.entries(data.vsMatches).forEach(([key, value]) => {
+      localStorage.setItem(key, JSON.stringify(value));
+    });
+  }
+
+  return true;
 }
 
 function getVsTotals(myId, oppId) {

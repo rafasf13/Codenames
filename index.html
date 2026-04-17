@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CineNames</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
 
   <header class="game-header">
@@ -38,7 +40,8 @@
       <div class="lobby-card">
         <h2>Create Game</h2>
         <p style="color:#888; margin-bottom:20px;">Set up a board and invite a friend</p>
-        <button id="create-room-btn" class="btn btn-primary" style="width:100%;">Create Room</button>
+        <button id="create-room-btn" class="btn btn-primary" style="width:100%;">Create VS Room</button>
+        <button id="create-battle-btn" class="btn btn-primary" style="width:100%; margin-top:8px; background:#e94560;">Create Battle Room</button>
       </div>
       <div class="lobby-card">
         <h2>Daily Puzzle</h2>
@@ -57,6 +60,9 @@
       <button id="solo-scores-btn" class="btn btn-secondary">Best Solo Scores</button>
       <button id="vs-stats-btn" class="btn btn-secondary">VS Stats</button>
       <button id="daily-lb-btn" class="btn btn-secondary">Daily Leaderboard</button>
+    </div>
+    <div class="account-section">
+      <div id="account-status"></div>
     </div>
   </section>
 
@@ -157,9 +163,14 @@
         <div id="actor-fields"></div>
         <button id="submit-actors-btn" class="btn btn-primary" style="width:100%; margin-top:15px;">Submit</button>
       </div>
+      <div id="battle-opp-panel" class="battle-opp-panel" style="display:none;">
+        <h2>Opponent's Picks</h2>
+        <div id="battle-opp-list" class="battle-opp-list"></div>
+      </div>
     </div>
     <!-- Mobile fixed bottom input -->
     <div id="mobile-input-bar" class="mobile-input-bar">
+      <div id="mobile-entered-list" class="mobile-entered-list"></div>
       <div id="mobile-input-slot"></div>
       <button id="mobile-submit-btn" class="btn btn-primary mobile-submit-btn">Submit</button>
     </div>
@@ -209,4 +220,5 @@
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
 </body>
+
 </html>
