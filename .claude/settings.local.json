@@ -7,7 +7,8 @@
       "Bash(node -c js/ui.js)",
       "Bash(node -c js/app.js)",
       "Bash(node -c js/player.js)",
-      "Bash(node -c js/tmdb.js)"
+      "Bash(node -c js/tmdb.js)",
+      "Bash(node -c js/firebase.js)"
     ]
   }
 }

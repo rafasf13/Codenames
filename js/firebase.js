@@ -15,10 +15,28 @@ function initFirebase() {
   app = firebase.initializeApp(firebaseConfig);
   db = firebase.database();
   auth = firebase.auth();
-  return auth.signInAnonymously().then((cred) => {
-    currentUser = cred.user;
-    return currentUser;
+  return new Promise((resolve) => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      unsubscribe();
+      if (user) {
+        currentUser = user;
+        resolve(currentUser);
+      } else {
+        auth.signInAnonymously().then((cred) => {
+          currentUser = cred.user;
+          resolve(currentUser);
+        });
+      }
+    });
   });
+}
+
+async function logOut() {
+  await auth.signOut();
+  currentUser = null;
+  localStorage.removeItem('cinenames_player');
+  clearActiveGame();
+  window.location.reload();
 }
 
 function getUid() {

@@ -7,6 +7,7 @@ const MAX_ACTORS = 25;
 let activeDropdown = null; // track which dropdown is active for keyboard nav
 let highlightedIndex = -1;
 let vsMatchRecorded = false;
+let submissionInitialized = false;
 
 function formatTime(seconds) {
   if (!seconds) return '0:00';
@@ -270,7 +271,8 @@ function renderSubmission(data, mySlot) {
   }
 
   const container = document.getElementById('actor-fields');
-  if (container.children.length !== MAX_ACTORS) {
+  if (!submissionInitialized) {
+    submissionInitialized = true;
     container.innerHTML = '';
     selectedActors = new Array(MAX_ACTORS).fill(null);
     for (let i = 0; i < MAX_ACTORS; i++) {
@@ -278,6 +280,9 @@ function renderSubmission(data, mySlot) {
     }
     // Scroll first empty field into view
     scrollToNextEmpty();
+  } else if (isBattleGame) {
+    // Update battle panel on re-render without resetting fields
+    updateBattleOpponentList(data);
   }
 
   if (!submissionTimer) {
@@ -926,8 +931,9 @@ function renderAccountStatus() {
 
   if (isEmailLinked()) {
     const email = getLinkedEmail();
-    container.innerHTML = `<p class="account-linked">Account linked: <strong>${email}</strong>
-      <button id="sync-btn" class="btn-link" style="margin-left:8px;">Sync now</button></p>`;
+    container.innerHTML = `<p class="account-linked">Signed in as: <strong>${email}</strong>
+      <button id="sync-btn" class="btn-link" style="margin-left:8px;">Sync now</button>
+      <button id="logout-btn" class="btn-link" style="margin-left:8px; color:#e94560;">Log out</button></p>`;
     container.querySelector('#sync-btn').addEventListener('click', async () => {
       const btn = container.querySelector('#sync-btn');
       btn.textContent = 'Syncing...';
@@ -939,6 +945,9 @@ function renderAccountStatus() {
         btn.textContent = 'Failed';
         console.error(e);
       }
+    });
+    container.querySelector('#logout-btn').addEventListener('click', () => {
+      logOut();
     });
   } else {
     container.innerHTML = `

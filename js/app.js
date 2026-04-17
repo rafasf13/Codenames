@@ -197,6 +197,7 @@ function resetGameState() {
   readyBound = false;
   opponentJoinedBeeped = false;
   vsMatchRecorded = false;
+  submissionInitialized = false;
   if (submissionTimer) {
     clearInterval(submissionTimer);
     submissionTimer = null;
