@@ -82,8 +82,14 @@ function renderLobby() {
       ? `Best solo: ${best.score} pts (${best.covered} movies, ${best.actors} actors)`
       : '';
   }
-  // Render account linking status
-  renderAccountStatus();
+  // Reset account toggle so it's collapsed on each lobby visit
+  const accountStatus = document.getElementById('account-status');
+  if (accountStatus) accountStatus.style.display = 'none';
+  // Update account toggle label to show linked state
+  const toggleBtn = document.getElementById('account-toggle-btn');
+  if (toggleBtn) {
+    toggleBtn.textContent = isEmailLinked() ? `⚙ ${getLinkedEmail()}` : '⚙ Account';
+  }
 
   // Update daily puzzle button state
   const dailyMsg = document.getElementById('daily-already-played');
@@ -99,6 +105,12 @@ function renderLobby() {
       dailyBtn.disabled = false;
       dailyBtn.textContent = "Play Today's Puzzle";
     }
+  }
+
+  // Show Recent Games button only if there's history
+  const recentBtn = document.getElementById('recent-games-btn');
+  if (recentBtn) {
+    recentBtn.style.display = getGameHistory().length > 0 ? 'inline-block' : 'none';
   }
 }
 
@@ -181,6 +193,11 @@ function renderReady(data, mySlot) {
 
   const otherSlot = mySlot === 'player1' ? 'player2' : 'player1';
   const oppName = data.players[otherSlot] ? data.players[otherSlot].name : 'Opponent';
+
+  // Save opponent name to game history so Recent Games can show it
+  if (currentRoom && oppName !== 'Opponent') {
+    updateGameHistoryEntry(currentRoom, { opponentName: oppName });
+  }
   document.getElementById('ready-opponent-name').textContent = `Playing against: ${oppName}`;
 
   // Beep once when opponent joins (for player 1 who was waiting)
@@ -198,9 +215,12 @@ function renderReady(data, mySlot) {
   if (myReady && oppReady) {
     status.textContent = 'Both ready! Starting...';
     btn.style.display = 'none';
-    // Transition to submission
-    if (data.state === STATES.READY) {
-      setState(currentRoom, STATES.SUBMISSION);
+    // Transition to submission — player1 writes the state + start timestamp
+    if (data.state === STATES.READY && mySlot === 'player1') {
+      updateRoom(currentRoom, {
+        state: STATES.SUBMISSION,
+        submissionStartedAt: firebase.database.ServerValue.TIMESTAMP
+      });
     }
     return;
   }
@@ -227,6 +247,12 @@ function renderReady(data, mySlot) {
 }
 
 // --- Submission ---
+function isSubmissionTimerExpired(data) {
+  const startedAt = data.submissionStartedAt || data.createdAt;
+  if (!startedAt) return false;
+  return (Date.now() - startedAt) > SUBMISSION_TIME * 1000;
+}
+
 function renderSubmission(data, mySlot) {
   if (data.submissions && data.submissions[mySlot] && data.submissions[mySlot].submitted) {
     if (data.solo) {
@@ -240,16 +266,23 @@ function renderSubmission(data, mySlot) {
     const otherSlot = mySlot === 'player1' ? 'player2' : 'player1';
     const otherSubmitted = data.submissions && data.submissions[otherSlot] && data.submissions[otherSlot].submitted;
     const otherConnected = data.players && data.players[otherSlot] && data.players[otherSlot].connected;
-    if (otherSubmitted) {
-      if (mySlot === 'player1' && data.state === STATES.SUBMISSION) runValidation(data);
+    if (otherSubmitted || isSubmissionTimerExpired(data)) {
+      if (data.state === STATES.SUBMISSION) {
+        if (otherSubmitted) runValidation(data);
+        else forceFinishGame(data);
+      }
     } else if (!otherConnected) {
       document.getElementById('waiting-message').textContent = 'Opponent disconnected. Finishing game...';
-      if (data.state === STATES.SUBMISSION) {
-        forceFinishGame(data);
-      }
+      if (data.state === STATES.SUBMISSION) forceFinishGame(data);
     } else {
       document.getElementById('waiting-message').textContent = 'Waiting for opponent to submit...';
     }
+    return;
+  }
+
+  // Timer expired before this player submitted — force finish with whatever we have
+  if (!data.solo && isSubmissionTimerExpired(data) && data.state === STATES.SUBMISSION) {
+    submitActors(selectedActors);
     return;
   }
 
@@ -278,15 +311,22 @@ function renderSubmission(data, mySlot) {
     for (let i = 0; i < MAX_ACTORS; i++) {
       container.appendChild(createActorField(i));
     }
-    // Scroll first empty field into view
-    scrollToNextEmpty();
+    // Restore any picks saved to Firebase (survives tab close)
+    restorePicksFromData(data);
   } else if (isBattleGame) {
     // Update battle panel on re-render without resetting fields
     updateBattleOpponentList(data);
   }
 
   if (!submissionTimer) {
-    submissionTimeLeft = SUBMISSION_TIME;
+    // Sync timer with server start time so rejoining mid-game shows correct time remaining
+    const startedAt = data.submissionStartedAt || data.createdAt;
+    if (startedAt) {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      submissionTimeLeft = Math.max(0, SUBMISSION_TIME - elapsed);
+    } else {
+      submissionTimeLeft = SUBMISSION_TIME;
+    }
     updateTimerDisplay();
     submissionTimer = setInterval(() => {
       submissionTimeLeft--;
@@ -356,9 +396,7 @@ function updateMobileInputBar(nextIdx) {
         tag.innerHTML = `${a.name}<button class="remove-tag" data-idx="${i}">&times;</button>`;
         tag.querySelector('.remove-tag').addEventListener('click', () => {
           selectedActors[i] = null;
-          if (!isSoloGame && !isDailyGame) {
-            writeLivePick(i, null);
-          }
+          writeLivePick(i, null);
           // Reset the desktop field too
           const fields = document.querySelectorAll('#actor-fields .actor-field');
           if (fields[i]) {
@@ -398,6 +436,35 @@ function updateMobileInputBar(nextIdx) {
   }
 }
 
+function restorePicksFromData(data) {
+  const myPicks = data.livePicks && data.livePicks[mySlot];
+  if (!myPicks) return;
+  const fields = document.querySelectorAll('#actor-fields .actor-field');
+  Object.entries(myPicks).forEach(([indexStr, actor]) => {
+    if (!actor || !actor.id) return;
+    const index = parseInt(indexStr);
+    if (index >= MAX_ACTORS) return;
+    selectedActors[index] = { id: actor.id, name: actor.name };
+    const field = fields[index];
+    if (!field) return;
+    const input = field.querySelector('.actor-input');
+    const display = field.querySelector('.actor-selected');
+    if (!input || !display) return;
+    input.style.display = 'none';
+    display.style.display = 'flex';
+    display.innerHTML = `<span>${actor.name}</span><button class="remove-actor" data-index="${index}">&times;</button>`;
+    display.querySelector('.remove-actor').addEventListener('click', () => {
+      selectedActors[index] = null;
+      writeLivePick(index, null);
+      input.style.display = 'block';
+      input.value = '';
+      display.style.display = 'none';
+      scrollToNextEmpty();
+    });
+  });
+  scrollToNextEmpty();
+}
+
 function selectPerson(person, index, input, selectedDisplay, dropdown) {
   // In Battle mode, check if opponent already picked this actor
   if (isBattleGame && roomData) {
@@ -408,10 +475,8 @@ function selectPerson(person, index, input, selectedDisplay, dropdown) {
     }
   }
   selectedActors[index] = { id: person.id, name: person.name };
-  // Write live pick to Firebase for VS/Battle modes
-  if (!isSoloGame && !isDailyGame) {
-    writeLivePick(index, person);
-  }
+  // Always write live pick so actors survive tab close/rejoin
+  writeLivePick(index, person);
   input.value = '';
   input.style.display = 'none';
   const roleLabel = person.department === 'Directing' ? ' (dir)' : '';
@@ -419,9 +484,7 @@ function selectPerson(person, index, input, selectedDisplay, dropdown) {
   selectedDisplay.innerHTML = `<span>${person.name}${roleLabel}</span><button class="remove-actor" data-index="${index}">&times;</button>`;
   selectedDisplay.querySelector('.remove-actor').addEventListener('click', () => {
     selectedActors[index] = null;
-    if (!isSoloGame && !isDailyGame) {
-      writeLivePick(index, null);
-    }
+    writeLivePick(index, null);
     input.style.display = 'block';
     input.value = '';
     selectedDisplay.style.display = 'none';
@@ -626,20 +689,23 @@ function renderResults(data, mySlot) {
   } else {
     const myScore = mySlot === 'player1' ? r.p1Score : r.p2Score;
     const oppScore = mySlot === 'player1' ? r.p2Score : r.p1Score;
-    if (r.winner) {
-      const isMe = r.winner === mySlot;
-      banner.textContent = isMe ? `You win! ${myScore} pts` : `Opponent wins! ${oppScore} pts`;
-      banner.className = 'result-banner ' + (isMe ? 'win' : 'lose');
-    } else {
-      banner.textContent = `It's a tie! ${myScore} pts each`;
-      banner.className = 'result-banner draw';
-    }
-    document.getElementById('result-bid-info').textContent = '';
     const myPid = getPlayerId();
     const oppSlot = mySlot === 'player1' ? 'player2' : 'player1';
     const oppPid = data.players[oppSlot] ? data.players[oppSlot].playerId : null;
     const myName = getPlayerName();
     const oppName = data.players[oppSlot] ? data.players[oppSlot].name : 'Opponent';
+    const scoreLine = `${myName} ${myScore} — ${oppName} ${oppScore}`;
+    if (r.winner) {
+      const isMe = r.winner === mySlot;
+      banner.innerHTML = `<strong>${isMe ? 'You win!' : oppName + ' wins!'}</strong><br><span style="font-size:0.85em;">${scoreLine}</span>`;
+      banner.className = 'result-banner ' + (isMe ? 'win' : 'lose');
+    } else {
+      banner.innerHTML = `<strong>It's a tie!</strong><br><span style="font-size:0.85em;">${scoreLine}</span>`;
+      banner.className = 'result-banner draw';
+    }
+    document.getElementById('result-bid-info').textContent = '';
+    // Mark game as finished in history
+    if (currentRoom) updateGameHistoryEntry(currentRoom, { state: 'RESULTS' });
 
     // Player 2 also needs to record the match (player 1 records in runValidation)
     if (mySlot === 'player2' && oppPid && !vsMatchRecorded) {
@@ -1056,6 +1122,73 @@ async function checkEmailSignInLink() {
     }
     return false;
   }
+}
+
+// --- Recent Games ---
+
+async function renderRecentGames() {
+  showScreen('recent-games');
+  const listEl = document.getElementById('recent-games-list');
+  listEl.innerHTML = '<p class="empty-message">Loading...</p>';
+
+  const history = getGameHistory();
+  if (history.length === 0) {
+    listEl.innerHTML = '<p class="empty-message">No recent games.</p>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  for (const entry of history) {
+    const item = document.createElement('div');
+    item.className = 'recent-game-item';
+
+    const typeLabel = { solo: 'Solo', vs: 'VS', battle: 'Battle', daily: 'Daily Puzzle' }[entry.type] || 'Game';
+    const oppText = entry.opponentName ? ` vs ${entry.opponentName}` : '';
+    const timeAgo = formatTimeAgo(entry.startedAt);
+    const isFinished = entry.state === 'RESULTS';
+    const btnLabel = isFinished ? 'View Results' : 'Rejoin';
+
+    // For daily puzzles, show the date instead of the raw room code
+    let codeDisplay = entry.roomCode;
+    if (entry.type === 'daily') {
+      const dateMatch = entry.roomCode.match(/DAILY-(\d{4}-\d{2}-\d{2})/);
+      codeDisplay = dateMatch ? dateMatch[1] : entry.roomCode;
+    }
+
+    item.innerHTML = `
+      <div class="recent-game-info">
+        <span class="recent-game-type">${typeLabel}${oppText}</span>
+        <span class="recent-game-code">${codeDisplay}</span>
+        <span class="recent-game-time">${timeAgo}</span>
+      </div>
+      <button class="btn btn-secondary recent-rejoin-btn">${btnLabel}</button>
+    `;
+
+    item.querySelector('.recent-rejoin-btn').addEventListener('click', async () => {
+      const btn = item.querySelector('.recent-rejoin-btn');
+      btn.textContent = 'Loading...';
+      btn.disabled = true;
+      const result = await rejoinFromHistory(entry);
+      if (result.error === 'expired') {
+        item.innerHTML = '<p class="empty-message" style="color:#e94560;">Game expired or no longer exists.</p>';
+        renderRecentGames();
+      } else if (result.error === 'not_in_room') {
+        item.innerHTML = '<p class="empty-message" style="color:#e94560;">You are no longer in this room.</p>';
+        renderRecentGames();
+      }
+    });
+
+    listEl.appendChild(item);
+  }
+}
+
+function formatTimeAgo(timestamp) {
+  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
 }
 
 // Close dropdowns when clicking outside

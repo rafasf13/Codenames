@@ -53,7 +53,7 @@ async function createRoom(movies, solo, battle) {
   await writeRoom(code, data);
   currentRoom = code;
   mySlot = 'player1';
-  saveActiveGame(code, 'player1', !!solo);
+  saveActiveGame(code, 'player1', !!solo, solo ? 'solo' : (battle ? 'battle' : 'vs'));
   startListening();
   return code;
 }
@@ -82,7 +82,7 @@ async function joinRoom(code) {
 
   currentRoom = code;
   mySlot = 'player2';
-  saveActiveGame(code, 'player2', false);
+  saveActiveGame(code, 'player2', false, data.battle ? 'battle' : 'vs');
   startListening();
   return data;
 }
@@ -150,6 +150,8 @@ function bothSubmitted(data) {
 }
 
 async function runValidation(data) {
+  if (validationInProgress) return;
+  validationInProgress = true;
   const boardMovies = Object.values(data.board.movies);
   const boardMovieIds = boardMovies.map(m => m.id);
 
@@ -236,64 +238,81 @@ function calculateScore(moviesCovered, actorsUsed) {
   return moviesCovered * (26 - actorsUsed);
 }
 
-function saveActiveGame(roomCode, slot, solo) {
+function saveActiveGame(roomCode, slot, solo, type) {
   localStorage.setItem('cinenames_active_game', JSON.stringify({
     roomCode, slot, solo, timestamp: Date.now()
   }));
+  addToGameHistory(roomCode, slot, type || (solo ? 'solo' : 'vs'));
 }
 
 function clearActiveGame() {
   localStorage.removeItem('cinenames_active_game');
 }
 
-function getActiveGame() {
-  const stored = localStorage.getItem('cinenames_active_game');
-  if (!stored) return null;
-  const data = JSON.parse(stored);
-  // Expire after 30 minutes
-  if (Date.now() - data.timestamp > 30 * 60 * 1000) {
-    clearActiveGame();
-    return null;
-  }
-  return data;
+// --- Game history (Recent Games) ---
+
+function addToGameHistory(roomCode, slot, type) {
+  const all = JSON.parse(localStorage.getItem('cinenames_game_history') || '[]');
+  const existing = all.findIndex(g => g.roomCode === roomCode);
+  const entry = {
+    roomCode,
+    slot,
+    type: type || 'vs',
+    startedAt: existing >= 0 ? all[existing].startedAt : Date.now(),
+    opponentName: existing >= 0 ? all[existing].opponentName : null
+  };
+  if (existing >= 0) all[existing] = entry;
+  else all.unshift(entry);
+  localStorage.setItem('cinenames_game_history', JSON.stringify(all.slice(0, 10)));
 }
 
-async function tryRejoinGame() {
-  const active = getActiveGame();
-  if (!active) return false;
+function updateGameHistoryEntry(roomCode, updates) {
+  const all = JSON.parse(localStorage.getItem('cinenames_game_history') || '[]');
+  const idx = all.findIndex(g => g.roomCode === roomCode);
+  if (idx >= 0) {
+    Object.assign(all[idx], updates);
+    localStorage.setItem('cinenames_game_history', JSON.stringify(all));
+  }
+}
 
-  const data = await readRoom(active.roomCode);
+function getGameHistory() {
+  const stored = localStorage.getItem('cinenames_game_history');
+  if (!stored) return [];
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  return JSON.parse(stored).filter(g => g.startedAt > cutoff);
+}
+
+function removeFromGameHistory(roomCode) {
+  const all = JSON.parse(localStorage.getItem('cinenames_game_history') || '[]');
+  localStorage.setItem('cinenames_game_history', JSON.stringify(all.filter(g => g.roomCode !== roomCode)));
+}
+
+async function rejoinFromHistory(entry) {
+  const data = await readRoom(entry.roomCode);
   if (!data) {
-    clearActiveGame();
-    return false;
+    removeFromGameHistory(entry.roomCode);
+    return { error: 'expired' };
   }
 
-  // Only rejoin if game is still in progress
-  if (data.state === STATES.RESULTS) {
-    clearActiveGame();
-    return false;
-  }
-
-  // Verify this player is in the room
   const myPid = getPlayerId();
-  const slot = active.slot;
-  if (!data.players || !data.players[slot] || data.players[slot].playerId !== myPid) {
-    clearActiveGame();
-    return false;
+  const slot = entry.slot;
+  if (data.players && data.players[slot] && data.players[slot].playerId !== myPid) {
+    removeFromGameHistory(entry.roomCode);
+    return { error: 'not_in_room' };
   }
 
-  currentRoom = active.roomCode;
+  currentRoom = entry.roomCode;
   mySlot = slot;
-  isSoloGame = !!active.solo;
-  isBattleGame = !!data.battle;
+  isSoloGame = entry.type === 'solo' || entry.type === 'daily';
+  isBattleGame = entry.type === 'battle';
+  isDailyGame = entry.type === 'daily';
 
-  // Mark as connected again
-  await updateRoom(active.roomCode, {
-    ['players/' + slot + '/connected']: true
-  });
+  if (!isSoloGame && data.players && data.players[slot]) {
+    await updateRoom(entry.roomCode, { ['players/' + slot + '/connected']: true });
+  }
 
   startListening();
-  return true;
+  return { success: true, state: data.state };
 }
 
 let isDailyGame = false;
@@ -384,7 +403,7 @@ async function startDailyPuzzle() {
   await writeRoom(code, data);
   currentRoom = code;
   mySlot = 'player1';
-  saveActiveGame(code, 'player1', true);
+  saveActiveGame(code, 'player1', true, 'daily');
   startListening();
   return { alreadyPlayed: false, dateStr };
 }
@@ -444,6 +463,7 @@ async function submitDailyScore(score, covered, actorCount, timeTaken) {
 }
 
 let forceFinishing = false;
+let validationInProgress = false;
 async function forceFinishGame(data) {
   if (forceFinishing) return;
   forceFinishing = true;

@@ -160,6 +160,12 @@ h1, h2, h3 {
   margin-left: 10px;
 }
 
+.recent-games-top-btn {
+  font-size: 0.8rem;
+  padding: 5px 12px;
+  margin-left: 6px;
+}
+
 /* VS Score Panel */
 .vs-score-panel {
   text-align: center;
@@ -190,25 +196,109 @@ h1, h2, h3 {
 }
 
 .lobby-options {
-  display: flex;
-  gap: 40px;
-  justify-content: center;
-  margin-top: 40px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 24px;
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 560px) {
+  .lobby-options {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 }
 
 .lobby-card {
   background: #16213e;
-  padding: 40px;
+  padding: 24px;
   border-radius: 16px;
-  min-width: 280px;
   border: 1px solid #2a2a5a;
+  display: flex;
+  flex-direction: column;
 }
 
 .lobby-card h2 {
-  margin-bottom: 20px;
+  margin-bottom: 8px;
   color: #e94560;
+  font-size: 1.1rem;
 }
+
+.lobby-card-desc {
+  color: #888;
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+  flex: 1;
+}
+
+.lobby-mode-row {
+  display: flex;
+  gap: 10px;
+}
+
+.lobby-mode-option {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.lobby-mode-label {
+  font-size: 0.72rem;
+  color: #888;
+  text-align: center;
+}
+
+.battle-btn {
+  background: #a855f7 !important;
+}
+
+.lobby-footer {
+  max-width: 700px;
+  margin: 20px auto 0;
+  border-top: 1px solid #2a2a5a;
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.lobby-stats-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn-link-secondary {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 4px 2px;
+  transition: color 0.2s;
+}
+
+.btn-link-secondary:hover {
+  color: #4cc9f0;
+}
+
+.footer-sep {
+  color: #444;
+  font-size: 0.8rem;
+}
+
+.account-toggle {
+  font-size: 0.82rem;
+}
+
 
 .lobby-card input {
   display: block;
@@ -234,9 +324,6 @@ h1, h2, h3 {
 /* Account section */
 .account-section {
   text-align: center;
-  margin-top: 25px;
-  padding-top: 20px;
-  border-top: 1px solid #2a2a5a;
 }
 
 .account-linked {
@@ -795,13 +882,6 @@ h1, h2, h3 {
   margin-top: 25px;
 }
 
-/* Lobby stats buttons */
-.lobby-stats-buttons {
-  display: flex;
-  gap: 15px;
-  justify-content: center;
-  margin-top: 30px;
-}
 
 /* Leaderboard */
 .leaderboard-table {
@@ -846,6 +926,42 @@ h1, h2, h3 {
   flex-direction: column;
   gap: 8px;
   margin-top: 15px;
+}
+
+.recent-game-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #16213e;
+  border: 1px solid #2a2a5a;
+  border-radius: 10px;
+  padding: 14px 20px;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+.recent-game-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recent-game-type {
+  font-size: 1rem;
+  color: #eee;
+  font-weight: 600;
+}
+
+.recent-game-code {
+  font-size: 0.85rem;
+  color: #4cc9f0;
+  font-family: monospace;
+  letter-spacing: 2px;
+}
+
+.recent-game-time {
+  font-size: 0.8rem;
+  color: #888;
 }
 
 .opponent-btn {

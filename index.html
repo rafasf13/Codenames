@@ -30,39 +30,62 @@
       <span>Playing as: <strong id="player-display-name"></strong></span>
       <button id="change-name-btn" class="btn-link">change</button>
       <span id="best-solo-display" class="best-solo"></span>
+      <button id="recent-games-btn" class="btn btn-secondary recent-games-top-btn" style="display:none;">Recent Games</button>
     </div>
     <div class="lobby-options">
       <div class="lobby-card">
         <h2>Solo Game</h2>
-        <p style="color:#888; margin-bottom:20px;">Test yourself against the board</p>
+        <p class="lobby-card-desc">Test yourself against the board</p>
         <button id="solo-btn" class="btn btn-primary" style="width:100%;">Play Solo</button>
       </div>
       <div class="lobby-card">
-        <h2>Create Game</h2>
-        <p style="color:#888; margin-bottom:20px;">Set up a board and invite a friend</p>
-        <button id="create-room-btn" class="btn btn-primary" style="width:100%;">Create VS Room</button>
-        <button id="create-battle-btn" class="btn btn-primary" style="width:100%; margin-top:8px; background:#e94560;">Create Battle Room</button>
+        <h2>Daily Puzzle</h2>
+        <p class="lobby-card-desc">Same board for everyone, once per day</p>
+        <button id="daily-btn" class="btn btn-primary" style="width:100%;">Play Today's Puzzle</button>
+        <p id="daily-already-played" style="color:#e94560; display:none; margin-top:8px; font-size:0.85rem;"></p>
       </div>
       <div class="lobby-card">
-        <h2>Daily Puzzle</h2>
-        <p style="color:#888; margin-bottom:20px;">Same board for everyone, once per day</p>
-        <button id="daily-btn" class="btn btn-primary" style="width:100%;">Play Today's Puzzle</button>
-        <p id="daily-already-played" style="color:#e94560; display:none; margin-top:10px; font-size:0.85rem;"></p>
+        <h2>Play with a Friend</h2>
+        <p class="lobby-card-desc">Set up a board and invite someone</p>
+        <div class="lobby-mode-row">
+          <div class="lobby-mode-option">
+            <button id="create-room-btn" class="btn btn-primary" style="width:100%;">VS</button>
+            <span class="lobby-mode-label">Compete secretly</span>
+          </div>
+          <div class="lobby-mode-option">
+            <button id="create-battle-btn" class="btn btn-primary battle-btn" style="width:100%;">Battle</button>
+            <span class="lobby-mode-label">See picks live</span>
+          </div>
+        </div>
       </div>
       <div class="lobby-card">
         <h2>Join Game</h2>
-        <p style="color:#888; margin-bottom:20px;">Enter a room code to join</p>
+        <p class="lobby-card-desc">Enter a room code to join</p>
         <input type="text" id="join-code-input" maxlength="5" placeholder="ABCDE" autocomplete="off">
         <button id="join-room-btn" class="btn btn-secondary" style="width:100%;">Join Room</button>
       </div>
     </div>
-    <div class="lobby-stats-buttons">
-      <button id="solo-scores-btn" class="btn btn-secondary">Best Solo Scores</button>
-      <button id="vs-stats-btn" class="btn btn-secondary">VS Stats</button>
-      <button id="daily-lb-btn" class="btn btn-secondary">Daily Leaderboard</button>
+    <div class="lobby-footer">
+      <div class="lobby-stats-buttons">
+        <button id="solo-scores-btn" class="btn-link-secondary">Solo Scores</button>
+        <span class="footer-sep">·</span>
+        <button id="vs-stats-btn" class="btn-link-secondary">VS Stats</button>
+        <span class="footer-sep">·</span>
+        <button id="daily-lb-btn" class="btn-link-secondary">Daily Leaderboard</button>
+      </div>
+      <div class="account-section">
+        <button id="account-toggle-btn" class="btn-link-secondary account-toggle">⚙ Account</button>
+        <div id="account-status" style="display:none;"></div>
+      </div>
     </div>
-    <div class="account-section">
-      <div id="account-status"></div>
+  </section>
+
+  <!-- RECENT GAMES -->
+  <section id="recent-games" class="screen">
+    <h2>Recent Games</h2>
+    <div id="recent-games-list" class="leaderboard-list"></div>
+    <div style="text-align:center; margin-top:20px;">
+      <button id="recent-games-back-btn" class="btn btn-secondary">Back</button>
     </div>
   </section>
 
@@ -96,8 +119,10 @@
 
   <!-- BOARD SETUP -->
   <section id="board-setup" class="screen">
-    <h2>Set Up the Board</h2>
-    <p style="color:#888; margin-bottom:20px;">Filter movies by genre and decade, then generate a 5x5 board.</p>
+    <div style="text-align:center;">
+      <h2>Set Up the Board</h2>
+      <p style="color:#888; margin-bottom:20px;">Filter by genre, decade, or language — or just generate and go.</p>
+    </div>
 
     <div class="filter-section">
       <h3>Genres</h3>
@@ -123,6 +148,7 @@
     </div>
 
     <div class="board-actions">
+      <button id="board-back-btn" class="btn btn-secondary">← Back</button>
       <button id="generate-board-btn" class="btn btn-primary">Generate Board</button>
       <button id="confirm-board-btn" class="btn btn-secondary" style="display:none;">Create VS Room</button>
       <button id="confirm-solo-btn" class="btn btn-secondary" style="display:none;">Play Solo</button>

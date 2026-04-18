@@ -18,11 +18,8 @@ async function init() {
     console.error('Email link check failed:', e);
   }
 
-  // Check if player has a name already
   if (getPlayerName()) {
-    // Try to rejoin an active game first
-    const rejoined = await tryRejoinGame();
-    if (!rejoined) renderLobby();
+    renderLobby();
   } else {
     renderNamePrompt(() => renderLobby());
   }
@@ -32,6 +29,17 @@ function bindEvents() {
   // Name change
   document.getElementById('change-name-btn').addEventListener('click', () => {
     renderNamePrompt(() => renderLobby(), true);
+  });
+
+  // Board setup back button
+  document.getElementById('board-back-btn').addEventListener('click', () => renderLobby());
+
+  // Account toggle
+  document.getElementById('account-toggle-btn').addEventListener('click', () => {
+    const status = document.getElementById('account-status');
+    const isHidden = status.style.display === 'none';
+    status.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) renderAccountStatus();
   });
 
   // Lobby — solo
@@ -158,6 +166,10 @@ function bindEvents() {
   document.getElementById('vs-stats-back-btn').addEventListener('click', () => renderLobby());
   document.getElementById('daily-lb-back-btn').addEventListener('click', () => renderLobby());
 
+  // Recent Games
+  document.getElementById('recent-games-btn').addEventListener('click', () => renderRecentGames());
+  document.getElementById('recent-games-back-btn').addEventListener('click', () => renderLobby());
+
   // Submission — don't clear timer so it keeps ticking on the waiting screen
   document.getElementById('submit-actors-btn').addEventListener('click', () => {
     submitActors(selectedActors);
@@ -198,6 +210,7 @@ function resetGameState() {
   opponentJoinedBeeped = false;
   vsMatchRecorded = false;
   submissionInitialized = false;
+  validationInProgress = false;
   if (submissionTimer) {
     clearInterval(submissionTimer);
     submissionTimer = null;
